@@ -1,11 +1,11 @@
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import {
-    ScrollView,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from 'react-native';
 
 const QUICK_ACTIONS = [
@@ -43,7 +43,7 @@ const RECENT_ACTIVITY = [
 
 export default function AdminDashboardScreen() {
   const router = useRouter();
-  const router = useRouter();
+  
 
   return (
     <View style={styles.container}>
