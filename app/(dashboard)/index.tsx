@@ -43,7 +43,7 @@ const RECENT_ACTIVITY = [
 
 export default function AdminDashboardScreen() {
   const router = useRouter();
-  const router = useRouter();
+  
 
   return (
     <View style={styles.container}>
