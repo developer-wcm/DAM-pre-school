@@ -1,5 +1,6 @@
+import { Ionicons } from '@expo/vector-icons';
 import { Tabs } from 'expo-router';
-import { StyleSheet, Text } from 'react-native';
+import { StyleSheet } from 'react-native';
 
 export default function AccountantLayout() {
   return (
@@ -16,23 +17,21 @@ export default function AccountantLayout() {
         name="index"
         options={{
           title: 'Dashboard',
-          tabBarIcon: ({ color, focused }) => (
-            <Text style={[styles.icon, focused && styles.iconActive]}>📊</Text>
-          ),
+          tabBarIcon: ({ color, size }) => <Ionicons name="pie-chart" size={size} color={color} />,
         }}
       />
       <Tabs.Screen
         name="payments"
         options={{
           title: 'Payments',
-          tabBarIcon: ({ color }) => <Text style={styles.icon}>💳</Text>,
+          tabBarIcon: ({ color, size }) => <Ionicons name="cash" size={size} color={color} />,
         }}
       />
       <Tabs.Screen
         name="profile"
         options={{
           title: 'Profile',
-          tabBarIcon: ({ color }) => <Text style={styles.icon}>👤</Text>,
+          tabBarIcon: ({ color, size }) => <Ionicons name="person" size={size} color={color} />,
         }}
       />
     </Tabs>
@@ -55,11 +54,5 @@ const styles = StyleSheet.create({
   tabLabel: {
     fontSize: 11,
     fontWeight: '600',
-  },
-  icon: {
-    fontSize: 22,
-  },
-  iconActive: {
-    fontSize: 24,
   },
 });

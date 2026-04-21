@@ -1,5 +1,6 @@
+import { Ionicons } from '@expo/vector-icons';
 import { Tabs } from 'expo-router';
-import { StyleSheet, Text } from 'react-native';
+import { StyleSheet } from 'react-native';
 
 export default function TeacherLayout() {
   return (
@@ -16,30 +17,28 @@ export default function TeacherLayout() {
         name="index"
         options={{
           title: 'My Class',
-          tabBarIcon: ({ color, focused }) => (
-            <Text style={[styles.icon, focused && styles.iconActive]}>🎓</Text>
-          ),
+          tabBarIcon: ({ color, size }) => <Ionicons name="school" size={size} color={color} />,
         }}
       />
       <Tabs.Screen
         name="attendance"
         options={{
           title: 'Attendance',
-          tabBarIcon: ({ color }) => <Text style={styles.icon}>📅</Text>,
+          tabBarIcon: ({ color, size }) => <Ionicons name="checkbox" size={size} color={color} />,
         }}
       />
       <Tabs.Screen
         name="progress"
         options={{
           title: 'Progress',
-          tabBarIcon: ({ color }) => <Text style={styles.icon}>📈</Text>,
+          tabBarIcon: ({ color, size }) => <Ionicons name="bar-chart" size={size} color={color} />,
         }}
       />
       <Tabs.Screen
         name="profile"
         options={{
           title: 'Profile',
-          tabBarIcon: ({ color }) => <Text style={styles.icon}>👤</Text>,
+          tabBarIcon: ({ color, size }) => <Ionicons name="person" size={size} color={color} />,
         }}
       />
     </Tabs>
@@ -62,11 +61,5 @@ const styles = StyleSheet.create({
   tabLabel: {
     fontSize: 11,
     fontWeight: '600',
-  },
-  icon: {
-    fontSize: 22,
-  },
-  iconActive: {
-    fontSize: 24,
   },
 });

@@ -1,7 +1,10 @@
+import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
 import {
+    ActivityIndicator,
+    Alert,
     KeyboardAvoidingView,
     Platform,
     StyleSheet,
@@ -10,11 +13,35 @@ import {
     TouchableOpacity,
     View,
 } from 'react-native';
+import { useAuth } from '../context/auth';
 
 export default function LoginScreen() {
   const router = useRouter();
+  const { signInWithEmail, signInWithGoogle } = useAuth();
+
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
+
+  async function handleLogin() {
+    if (!email.trim() || !password.trim()) {
+      Alert.alert('Missing fields', 'Please enter your email and password.');
+      return;
+    }
+    setLoading(true);
+    const { error } = await signInWithEmail(email.trim(), password);
+    setLoading(false);
+    if (error) Alert.alert('Login failed', error);
+  }
+
+  async function handleGoogleLogin() {
+    setGoogleLoading(true);
+    const { error } = await signInWithGoogle();
+    setGoogleLoading(false);
+    if (error) Alert.alert('Google sign-in failed', error);
+  }
 
   return (
     <LinearGradient colors={['#EDE9F6', '#F0EEF8', '#EAF0F8']} style={styles.container}>
@@ -22,13 +49,11 @@ export default function LoginScreen() {
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={styles.keyboardView}
       >
-        {/* Top section */}
+        {/* Top */}
         <View style={styles.topContent}>
-          {/* Logo badge */}
           <View style={styles.logoBadge}>
-            <Text style={styles.logoEmoji}>🎓</Text>
+            <Ionicons name="school" size={26} color="#7B6FE8" />
           </View>
-
           <Text style={styles.title}>Welcome Back</Text>
           <Text style={styles.subtitle}>
             {"Sign in to continue managing your\nclassroom or child's progress."}
@@ -38,7 +63,7 @@ export default function LoginScreen() {
         {/* Inputs */}
         <View style={styles.inputsSection}>
           <View style={styles.inputRow}>
-            <Text style={styles.inputIcon}>✉️</Text>
+            <Ionicons name="mail-outline" size={18} color="#9A9AB0" style={styles.inputIcon} />
             <TextInput
               style={styles.input}
               placeholder="Email address"
@@ -48,20 +73,30 @@ export default function LoginScreen() {
               keyboardType="email-address"
               autoCapitalize="none"
               returnKeyType="next"
+              editable={!loading}
             />
           </View>
 
           <View style={styles.inputRow}>
-            <Text style={styles.inputIcon}>🔒</Text>
+            <Ionicons name="lock-closed-outline" size={18} color="#9A9AB0" style={styles.inputIcon} />
             <TextInput
               style={styles.input}
               placeholder="Password"
               placeholderTextColor="#ABABC4"
               value={password}
               onChangeText={setPassword}
-              secureTextEntry
+              secureTextEntry={!showPassword}
               returnKeyType="done"
+              onSubmitEditing={handleLogin}
+              editable={!loading}
             />
+            <TouchableOpacity onPress={() => setShowPassword(!showPassword)} style={styles.eyeBtn}>
+              <Ionicons
+                name={showPassword ? 'eye-outline' : 'eye-off-outline'}
+                size={18}
+                color="#9A9AB0"
+              />
+            </TouchableOpacity>
           </View>
 
           <TouchableOpacity style={styles.forgotBtn} activeOpacity={0.7}>
@@ -69,13 +104,13 @@ export default function LoginScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* Bottom actions */}
+        {/* Bottom */}
         <View style={styles.bottomContent}>
           <TouchableOpacity
             activeOpacity={0.85}
-            onPress={() => {
-              router.replace('/(dashboard)');
-            }}
+            onPress={handleLogin}
+            disabled={loading}
+            style={styles.logInButtonWrapper}
           >
             <LinearGradient
               colors={['#7B6FE8', '#6EC6C6']}
@@ -83,8 +118,39 @@ export default function LoginScreen() {
               end={{ x: 1, y: 0 }}
               style={styles.logInButton}
             >
-              <Text style={styles.logInText}>Log In  →</Text>
+              {loading ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <>
+                  <Text style={styles.logInText}>Log In</Text>
+                  <Ionicons name="arrow-forward" size={18} color="#fff" />
+                </>
+              )}
             </LinearGradient>
+          </TouchableOpacity>
+
+          <View style={styles.divider}>
+            <View style={styles.dividerLine} />
+            <Text style={styles.dividerText}>or</Text>
+            <View style={styles.dividerLine} />
+          </View>
+
+          <TouchableOpacity
+            style={styles.googleButton}
+            activeOpacity={0.85}
+            onPress={handleGoogleLogin}
+            disabled={googleLoading}
+          >
+            {googleLoading ? (
+              <ActivityIndicator color="#5A5A7A" />
+            ) : (
+              <>
+                <View style={styles.googleIconBox}>
+                  <Text style={styles.googleLetter}>G</Text>
+                </View>
+                <Text style={styles.googleText}>Continue with Google</Text>
+              </>
+            )}
           </TouchableOpacity>
 
           <Text style={styles.signUpText}>
@@ -100,102 +166,60 @@ export default function LoginScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
+  container: { flex: 1 },
   keyboardView: {
-    flex: 1,
-    paddingHorizontal: 28,
-    paddingTop: 72,
-    paddingBottom: 44,
+    flex: 1, paddingHorizontal: 28,
+    paddingTop: 72, paddingBottom: 44,
     justifyContent: 'space-between',
   },
-
-  // Top
-  topContent: {
-    gap: 14,
-  },
+  topContent: { gap: 14 },
   logoBadge: {
-    width: 52,
-    height: 52,
-    borderRadius: 16,
+    width: 56, height: 56, borderRadius: 18,
     backgroundColor: '#E8E4F8',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 4,
+    justifyContent: 'center', alignItems: 'center', marginBottom: 4,
   },
-  logoEmoji: {
-    fontSize: 26,
-  },
-  title: {
-    fontSize: 32,
-    fontWeight: '800',
-    color: '#1A1A2E',
-    letterSpacing: -0.5,
-  },
-  subtitle: {
-    fontSize: 15,
-    color: '#7A7A9D',
-    lineHeight: 23,
-  },
+  title: { fontSize: 32, fontWeight: '800', color: '#1A1A2E', letterSpacing: -0.5 },
+  subtitle: { fontSize: 15, color: '#7A7A9D', lineHeight: 23 },
 
-  // Inputs
-  inputsSection: {
-    gap: 14,
-  },
+  inputsSection: { gap: 14 },
   inputRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#F4F3FA',
-    borderRadius: 16,
-    paddingHorizontal: 16,
-    paddingVertical: 16,
-    gap: 12,
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: '#F4F3FA', borderRadius: 16,
+    paddingHorizontal: 16, paddingVertical: 16, gap: 12,
   },
-  inputIcon: {
-    fontSize: 16,
-    width: 22,
-    textAlign: 'center',
-  },
-  input: {
-    flex: 1,
-    fontSize: 15,
-    color: '#1A1A2E',
-  },
-  forgotBtn: {
-    alignSelf: 'flex-end',
-  },
-  forgotText: {
-    fontSize: 13,
-    color: '#7B6FE8',
-    fontWeight: '600',
-  },
+  inputIcon: { width: 20 },
+  input: { flex: 1, fontSize: 15, color: '#1A1A2E' },
+  eyeBtn: { padding: 2 },
+  forgotBtn: { alignSelf: 'flex-end' },
+  forgotText: { fontSize: 13, color: '#7B6FE8', fontWeight: '600' },
 
-  // Bottom
-  bottomContent: {
-    gap: 20,
-    alignItems: 'center',
-  },
+  bottomContent: { gap: 16, alignItems: 'center' },
+  logInButtonWrapper: { width: '100%', borderRadius: 50, overflow: 'hidden' },
   logInButton: {
-    width: '100%',
-    borderRadius: 50,
-    paddingVertical: 18,
-    alignItems: 'center',
-    justifyContent: 'center',
-    minWidth: 340,
+    width: '100%', borderRadius: 50, paddingVertical: 18,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
   },
-  logInText: {
-    color: '#FFFFFF',
-    fontSize: 17,
-    fontWeight: '700',
-    letterSpacing: 0.3,
+  logInText: { color: '#FFFFFF', fontSize: 17, fontWeight: '700', letterSpacing: 0.3 },
+
+  divider: { flexDirection: 'row', alignItems: 'center', gap: 12, width: '100%' },
+  dividerLine: { flex: 1, height: 1, backgroundColor: '#E0DFF0' },
+  dividerText: { fontSize: 13, color: '#9A9AB0' },
+
+  googleButton: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    backgroundColor: '#FFFFFF', borderRadius: 50, paddingVertical: 16,
+    width: '100%', gap: 12,
+    shadowColor: '#9B8FE0', shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.08, shadowRadius: 10, elevation: 3,
   },
-  signUpText: {
-    fontSize: 14,
-    color: '#5A5A7A',
+  googleIconBox: {
+    width: 24, height: 24, borderRadius: 12,
+    backgroundColor: '#F0F0F0',
+    justifyContent: 'center', alignItems: 'center',
   },
-  signUpLink: {
-    color: '#7B6FE8',
-    fontWeight: '700',
-  },
+  googleLetter: { fontSize: 13, fontWeight: '800', color: '#4285F4' },
+  googleText: { fontSize: 15, fontWeight: '600', color: '#3A3A5A' },
+
+  signUpText: { fontSize: 14, color: '#5A5A7A' },
+  signUpLink: { color: '#7B6FE8', fontWeight: '700' },
 });

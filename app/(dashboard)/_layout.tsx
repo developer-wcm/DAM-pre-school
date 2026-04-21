@@ -1,5 +1,6 @@
+import { Ionicons } from '@expo/vector-icons';
 import { Tabs } from 'expo-router';
-import { StyleSheet, Text } from 'react-native';
+import { StyleSheet } from 'react-native';
 
 export default function DashboardLayout() {
   return (
@@ -9,34 +10,35 @@ export default function DashboardLayout() {
         tabBarStyle: styles.tabBar,
         tabBarActiveTintColor: '#7B6FE8',
         tabBarInactiveTintColor: '#9A9AB0',
+        tabBarLabelStyle: styles.tabLabel,
       }}
     >
       <Tabs.Screen
         name="index"
         options={{
           title: 'Home',
-          tabBarIcon: ({ color }) => <Text style={[styles.icon, { color }]}>🏠</Text>,
+          tabBarIcon: ({ color, size }) => <Ionicons name="home" size={size} color={color} />,
         }}
       />
       <Tabs.Screen
         name="students"
         options={{
           title: 'Students',
-          tabBarIcon: ({ color }) => <Text style={[styles.icon, { color }]}>👥</Text>,
+          tabBarIcon: ({ color, size }) => <Ionicons name="people" size={size} color={color} />,
         }}
       />
       <Tabs.Screen
         name="fees"
         options={{
           title: 'Fees',
-          tabBarIcon: ({ color }) => <Text style={[styles.icon, { color }]}>💰</Text>,
+          tabBarIcon: ({ color, size }) => <Ionicons name="wallet" size={size} color={color} />,
         }}
       />
       <Tabs.Screen
         name="more"
         options={{
           title: 'More',
-          tabBarIcon: ({ color }) => <Text style={[styles.icon, { color }]}>⋯</Text>,
+          tabBarIcon: ({ color, size }) => <Ionicons name="ellipsis-horizontal" size={size} color={color} />,
         }}
       />
     </Tabs>
@@ -56,7 +58,8 @@ const styles = StyleSheet.create({
     paddingBottom: 12,
     paddingTop: 8,
   },
-  icon: {
-    fontSize: 22,
+  tabLabel: {
+    fontSize: 11,
+    fontWeight: '600',
   },
 });

@@ -1,9 +1,10 @@
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
+import { AuthProvider } from '../context/auth';
 
 export default function RootLayout() {
   return (
-    <>
+    <AuthProvider>
       <Stack>
         <Stack.Screen name="index" options={{ headerShown: false }} />
         <Stack.Screen name="role-selection" options={{ headerShown: false }} />
@@ -19,8 +20,9 @@ export default function RootLayout() {
         <Stack.Screen name="(accountant)" options={{ headerShown: false }} />
         <Stack.Screen name="admission/step-1" options={{ headerShown: false }} />
         <Stack.Screen name="admission/step-2" options={{ headerShown: false }} />
+        <Stack.Screen name="auth/callback" options={{ headerShown: false }} />
       </Stack>
       <StatusBar style="auto" />
-    </>
+    </AuthProvider>
   );
 }
