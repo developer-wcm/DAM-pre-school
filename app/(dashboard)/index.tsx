@@ -1,17 +1,17 @@
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useRouter } from 'expo-router';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  ActivityIndicator,
-  Alert,
-  Clipboard,
-  RefreshControl,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
+    ActivityIndicator,
+    Alert,
+    Animated,
+    Modal,
+    RefreshControl,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    View
 } from 'react-native';
 import { useAuth } from '../../context/auth';
 import { supabase } from '../../lib/supabase';
@@ -22,12 +22,18 @@ interface DashboardStats {
   presentToday: number;
   pendingFeesAmount: number;
   overdueCount: number;
-  joinCode: string | null;
   schoolName: string | null;
   nextHolidayName: string | null;
   nextHolidayDate: string | null;
   nextHolidayDateTo: string | null;
   nextHolidayDays: number | null;
+}
+
+interface PendingRequest {
+  id: string;
+  full_name: string | null;
+  role: string;
+  created_at: string;
 }
 
 interface ActivityItem {
@@ -40,10 +46,16 @@ interface ActivityItem {
 }
 
 const QUICK_ACTIONS = [
-  { id: 'admission', icon: 'person-add-outline' as const, label: 'New\nAdmission', color: '#E8E4F8', iconColor: '#7B6FE8' },
+  { id: 'pending', icon: 'people-outline' as const, label: 'Pending\nRequests', color: '#E8E4F8', iconColor: '#7B6FE8' },
   { id: 'attendance', icon: 'checkmark-circle-outline' as const, label: 'Mark\nAttendance', color: '#D4F4E8', iconColor: '#2A9D6E' },
   { id: 'payment', icon: 'card-outline' as const, label: 'Record\nPayment', color: '#FFF0D4', iconColor: '#D4822A' },
 ];
+
+const ROLE_CONFIG: Record<string, { color: string; bg: string; icon: any; label: string }> = {
+  teacher: { color: '#2A9D6E', bg: '#D4F4E8', icon: 'school-outline', label: 'Teacher' },
+  parent:  { color: '#7B6FE8', bg: '#E8E4F8', icon: 'people-outline', label: 'Parent'  },
+  accountant: { color: '#D4822A', bg: '#FFF0D4', icon: 'cash-outline', label: 'Accountant' },
+};
 
 function getGreeting() {
   const h = new Date().getHours();
@@ -53,43 +65,81 @@ function getGreeting() {
 }
 
 function formatCurrency(amount: number) {
-  if (amount >= 100000) return `₹${(amount / 100000).toFixed(1)}L`;
-  if (amount >= 1000) return `₹${(amount / 1000).toFixed(1)}K`;
-  return `₹${amount}`;
+  if (amount >= 100000) return `\u20B9${(amount / 100000).toFixed(1)}L`;
+  if (amount >= 1000) return `\u20B9${(amount / 1000).toFixed(1)}K`;
+  return `\u20B9${amount}`;
+}
+
+function timeAgo(dateStr: string) {
+  const diff = Date.now() - new Date(dateStr).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  return `${Math.floor(hrs / 24)}d ago`;
 }
 
 export default function AdminDashboardScreen() {
-  const router = useRouter();
   const { profile } = useAuth();
 
   const [stats, setStats] = useState<DashboardStats>({
     totalStudents: 0, classCounts: [], presentToday: 0,
-    pendingFeesAmount: 0, overdueCount: 0, joinCode: null, schoolName: null,
-    nextHolidayName: null, nextHolidayDate: null, nextHolidayDateTo: null, nextHolidayDays: null,
+    pendingFeesAmount: 0, overdueCount: 0,
+    schoolName: null, nextHolidayName: null, nextHolidayDate: null,
+    nextHolidayDateTo: null, nextHolidayDays: null,
   });
   const [activity, setActivity] = useState<ActivityItem[]>([]);
+  const [pendingRequests, setPendingRequests] = useState<PendingRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [showPendingModal, setShowPendingModal] = useState(false);
+
+  // Notification popup state
+  const [notifVisible, setNotifVisible] = useState(false);
+  const [notifUser, setNotifUser] = useState<PendingRequest | null>(null);
+  const slideAnim = useRef(new Animated.Value(-120)).current;
+
+  function showNotif(user: PendingRequest) {
+    setNotifUser(user);
+    setNotifVisible(true);
+    Animated.spring(slideAnim, {
+      toValue: 0,
+      useNativeDriver: true,
+      tension: 80,
+      friction: 10,
+    }).start();
+    // Auto-dismiss after 5 seconds
+    setTimeout(() => dismissNotif(), 5000);
+  }
+
+  function dismissNotif() {
+    Animated.timing(slideAnim, {
+      toValue: -120,
+      duration: 300,
+      useNativeDriver: true,
+    }).start(() => setNotifVisible(false));
+  }
 
   const schoolId = profile?.school_id;
 
   async function fetchDashboard() {
     if (!schoolId) return;
     try {
-      const [studentsRes, attendanceRes, feesRes, schoolRes, activityRes, holidayRes] = await Promise.all([
+      const [studentsRes, attendanceRes, feesRes, schoolRes, activityRes, holidayRes, pendingRes] = await Promise.all([
         supabase.from('students').select('id, class').eq('school_id', schoolId),
         supabase.from('attendance').select('student_id, status')
           .eq('school_id', schoolId).eq('date', new Date().toISOString().split('T')[0]),
         supabase.from('fees').select('amount, paid, due_date').eq('school_id', schoolId).eq('paid', false),
-        supabase.from('schools').select('name, join_code').eq('join_code', schoolId).single(),
+        supabase.from('schools').select('name').eq('join_code', schoolId).maybeSingle(),
         supabase.from('activity_log').select('*').eq('school_id', schoolId)
           .order('created_at', { ascending: false }).limit(5),
         supabase.from('holidays').select('name, date, date_to, days')
           .eq('school_id', schoolId)
           .gte('date', new Date().toISOString().split('T')[0])
-          .order('date', { ascending: true })
-          .limit(1)
-          .maybeSingle(),
+          .order('date', { ascending: true }).limit(1).maybeSingle(),
+        // Fetch unapproved users for this school via security definer function
+        supabase.rpc('get_pending_profiles', { p_school_id: schoolId }),
       ]);
 
       const students = studentsRes.data ?? [];
@@ -108,7 +158,6 @@ export default function AdminDashboardScreen() {
         totalStudents: students.length,
         classCounts: Object.entries(classCounts).map(([cls, count]) => ({ class: cls, count })),
         presentToday, pendingFeesAmount: pendingAmount, overdueCount,
-        joinCode: schoolRes.data?.join_code ?? schoolId,
         schoolName: schoolRes.data?.name ?? 'Your School',
         nextHolidayName: holidayRes.data?.name ?? null,
         nextHolidayDate: holidayRes.data?.date ?? null,
@@ -116,6 +165,7 @@ export default function AdminDashboardScreen() {
         nextHolidayDays: holidayRes.data?.days ?? null,
       });
       setActivity(activityRes.data ?? []);
+      setPendingRequests(pendingRes.data ?? []);
     } catch (e) {
       console.error('Dashboard fetch error:', e);
     } finally {
@@ -125,15 +175,85 @@ export default function AdminDashboardScreen() {
   }
 
   useEffect(() => { fetchDashboard(); }, [schoolId]);
-
   const onRefresh = useCallback(() => { setRefreshing(true); fetchDashboard(); }, [schoolId]);
 
-  function copyJoinCode() {
-    if (stats.joinCode) {
-      Clipboard.setString(stats.joinCode);
-      Alert.alert('Copied!', `Join code "${stats.joinCode}" copied to clipboard.`);
+  // Realtime subscription — fires when a new profile is inserted (new sign-up)
+  useEffect(() => {
+    if (!schoolId) return;
+
+    // Create a unique channel name to avoid conflicts
+    const channelName = `pending-approvals-${schoolId}-${Date.now()}`;
+    
+    const channel = supabase.channel(channelName);
+    
+    channel
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'profiles',
+          filter: `school_id=eq.${schoolId}`,
+        },
+        (payload) => {
+          const newUser = payload.new as PendingRequest;
+          if (newUser.role !== 'admin') {
+            setPendingRequests((prev) => {
+              if (prev.find((r) => r.id === newUser.id)) return prev;
+              return [newUser, ...prev];
+            });
+            showNotif(newUser);
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [schoolId]);
+
+  async function handleApprove(userId: string, name: string) {
+    setActionLoading(userId);
+    const { error } = await supabase.rpc('approve_profile', { p_user_id: userId });
+    setActionLoading(null);
+    if (error) {
+      Alert.alert('Error', error.message);
+    } else {
+      setPendingRequests((prev) => prev.filter((r) => r.id !== userId));
+      Alert.alert('Approved', `${name} has been approved and can now access the system.`);
+      // Close modal if no more pending requests
+      if (pendingRequests.length === 1) {
+        setShowPendingModal(false);
+      }
     }
   }
+
+  async function handleReject(userId: string, name: string) {
+    Alert.alert(
+      'Reject Request',
+      `Are you sure you want to reject ${name}?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Reject', style: 'destructive',
+          onPress: async () => {
+            setActionLoading(userId);
+            const { error } = await supabase.rpc('reject_profile', { p_user_id: userId });
+            setActionLoading(null);
+            if (error) {
+              Alert.alert('Error', error.message);
+            } else {
+              setPendingRequests((prev) => prev.filter((r) => r.id !== userId));
+            }
+          },
+        },
+      ]
+    );
+  }
+
+  function copyJoinCode() {}
+  function copyTeacherCode() {}
 
   const attendancePct = stats.totalStudents > 0
     ? Math.round((stats.presentToday / stats.totalStudents) * 100) : 0;
@@ -171,24 +291,77 @@ export default function AdminDashboardScreen() {
             <View style={styles.avatar}>
               <Text style={styles.avatarText}>{initials}</Text>
               <View style={styles.avatarDot} />
+              {pendingRequests.length > 0 && (
+                <View style={styles.avatarBadge}>
+                  <Text style={styles.avatarBadgeText}>{pendingRequests.length}</Text>
+                </View>
+              )}
             </View>
           </View>
 
-          {/* Join Code Card */}
-          <TouchableOpacity style={styles.joinCodeCard} onPress={copyJoinCode} activeOpacity={0.85}>
-            <View style={styles.joinCodeLeft}>
-              <View style={styles.joinCodeLabelRow}>
-                <Ionicons name="business-outline" size={14} color="rgba(255,255,255,0.8)" />
-                <Text style={styles.joinCodeLabel}>School Join Code</Text>
+          {/* Pending Approval Requests */}
+          {pendingRequests.length > 0 && (
+            <View style={styles.section}>
+              <View style={styles.sectionHeaderRow}>
+                <Text style={styles.sectionTitle}>Pending Requests</Text>
+                <View style={styles.pendingCountBadge}>
+                  <Text style={styles.pendingCountText}>{pendingRequests.length}</Text>
+                </View>
               </View>
-              <Text style={styles.joinCodeValue}>{stats.joinCode ?? '------'}</Text>
-              <Text style={styles.joinCodeHint}>Share with parents & teachers to join</Text>
+              <View style={styles.requestList}>
+                {pendingRequests.map((req) => {
+                  const cfg = ROLE_CONFIG[req.role] ?? ROLE_CONFIG.parent;
+                  const isActing = actionLoading === req.id;
+                  const nameInitials = req.full_name
+                    ? req.full_name.split(' ').map((n) => n[0]).join('').toUpperCase().slice(0, 2)
+                    : '??';
+                  return (
+                    <View key={req.id} style={styles.requestCard}>
+                      {/* Avatar + info */}
+                      <View style={[styles.reqAvatar, { backgroundColor: cfg.bg }]}>
+                        <Text style={[styles.reqAvatarText, { color: cfg.color }]}>{nameInitials}</Text>
+                      </View>
+                      <View style={styles.reqInfo}>
+                        <Text style={styles.reqName} numberOfLines={1}>
+                          {req.full_name ?? 'Unknown User'}
+                        </Text>
+                        <View style={styles.reqRoleRow}>
+                          <View style={[styles.reqRoleBadge, { backgroundColor: cfg.bg }]}>
+                            <Ionicons name={cfg.icon} size={11} color={cfg.color} />
+                            <Text style={[styles.reqRoleText, { color: cfg.color }]}>
+                              {cfg.label}
+                            </Text>
+                          </View>
+                          <Text style={styles.reqTime}>{timeAgo(req.created_at)}</Text>
+                        </View>
+                      </View>
+                      {/* Actions */}
+                      {isActing ? (
+                        <ActivityIndicator size="small" color="#7B6FE8" style={{ marginLeft: 8 }} />
+                      ) : (
+                        <View style={styles.reqActions}>
+                          <TouchableOpacity
+                            style={styles.rejectBtn}
+                            onPress={() => handleReject(req.id, req.full_name ?? '')}
+                            activeOpacity={0.8}
+                          >
+                            <Ionicons name="close" size={16} color="#E05A5A" />
+                          </TouchableOpacity>
+                          <TouchableOpacity
+                            style={styles.approveBtn}
+                            onPress={() => handleApprove(req.id, req.full_name ?? '')}
+                            activeOpacity={0.8}
+                          >
+                            <Ionicons name="checkmark" size={16} color="#FFFFFF" />
+                          </TouchableOpacity>
+                        </View>
+                      )}
+                    </View>
+                  );
+                })}
+              </View>
             </View>
-            <View style={styles.copyBadge}>
-              <Ionicons name="copy-outline" size={22} color="#fff" />
-              <Text style={styles.copyText}>Copy</Text>
-            </View>
-          </TouchableOpacity>
+          )}
 
           {/* Stats grid */}
           <View style={styles.statsGrid}>
@@ -221,7 +394,7 @@ export default function AdminDashboardScreen() {
                 <Text style={styles.statLabel}>Today's{'\n'}Attendance</Text>
               </View>
               <Text style={styles.statValue}>
-                {stats.totalStudents > 0 ? `${attendancePct}%` : '—'}
+                {stats.totalStudents > 0 ? `${attendancePct}%` : "—"}
               </Text>
               <Text style={styles.statSubtext}>
                 {stats.totalStudents > 0
@@ -238,7 +411,7 @@ export default function AdminDashboardScreen() {
                 <Text style={styles.statLabel}>Pending{'\n'}Fees</Text>
               </View>
               <Text style={styles.statValue}>
-                {stats.pendingFeesAmount > 0 ? formatCurrency(stats.pendingFeesAmount) : '₹0'}
+                {stats.pendingFeesAmount > 0 ? formatCurrency(stats.pendingFeesAmount) : 'Rs.0'}
               </Text>
               <Text style={styles.statSubtext}>
                 {stats.overdueCount > 0 ? `${stats.overdueCount} overdue` : 'No overdue fees'}
@@ -254,9 +427,7 @@ export default function AdminDashboardScreen() {
               </View>
               {stats.nextHolidayName ? (
                 <>
-                  <Text style={styles.holidayName} numberOfLines={2}>
-                    {stats.nextHolidayName}
-                  </Text>
+                  <Text style={styles.holidayName} numberOfLines={2}>{stats.nextHolidayName}</Text>
                   <Text style={styles.holidayDate}>
                     {new Date(stats.nextHolidayDate!).toLocaleDateString('en-IN', {
                       day: 'numeric', month: 'short', year: 'numeric',
@@ -284,9 +455,20 @@ export default function AdminDashboardScreen() {
                   key={action.id}
                   style={[styles.actionBtn, { backgroundColor: action.color }]}
                   activeOpacity={0.85}
-                  onPress={() => { if (action.id === 'admission') router.push('/admission/step-1'); }}
+                  onPress={() => {
+                    if (action.id === 'pending') {
+                      setShowPendingModal(true);
+                    }
+                  }}
                 >
-                  <Ionicons name={action.icon} size={28} color={action.iconColor} />
+                  <View style={styles.actionIconWrapper}>
+                    <Ionicons name={action.icon} size={28} color={action.iconColor} />
+                    {action.id === 'pending' && pendingRequests.length > 0 && (
+                      <View style={styles.actionBadge}>
+                        <Text style={styles.actionBadgeText}>{pendingRequests.length}</Text>
+                      </View>
+                    )}
+                  </View>
                   <Text style={styles.actionLabel}>{action.label}</Text>
                 </TouchableOpacity>
               ))}
@@ -322,6 +504,147 @@ export default function AdminDashboardScreen() {
           <View style={{ height: 20 }} />
         </ScrollView>
       </LinearGradient>
+
+      {/* ── Realtime Notification Banner ── */}
+      {notifVisible && notifUser && (
+        <Animated.View
+          style={[styles.notifBanner, { transform: [{ translateY: slideAnim }] }]}
+        >
+          <View style={[styles.notifAvatar, {
+            backgroundColor: ROLE_CONFIG[notifUser.role]?.bg ?? '#E8E4F8',
+          }]}>
+            <Ionicons
+              name={ROLE_CONFIG[notifUser.role]?.icon ?? 'person'}
+              size={18}
+              color={ROLE_CONFIG[notifUser.role]?.color ?? '#7B6FE8'}
+            />
+          </View>
+          <View style={styles.notifText}>
+            <Text style={styles.notifTitle}>New Approval Request</Text>
+            <Text style={styles.notifBody} numberOfLines={1}>
+              <Text style={styles.notifName}>{notifUser.full_name ?? 'Someone'}</Text>
+              {' '}wants to join as{' '}
+              <Text style={styles.notifRole}>
+                {ROLE_CONFIG[notifUser.role]?.label ?? notifUser.role}
+              </Text>
+            </Text>
+          </View>
+          <TouchableOpacity onPress={dismissNotif} style={styles.notifClose}>
+            <Ionicons name="close" size={18} color="#5A5A7A" />
+          </TouchableOpacity>
+        </Animated.View>
+      )}
+
+      {/* ── Pending Requests Modal ── */}
+      <Modal
+        visible={showPendingModal}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setShowPendingModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContainer}>
+            {/* Modal Header */}
+            <View style={styles.modalHeader}>
+              <View style={styles.modalHeaderLeft}>
+                <View style={styles.modalIconBox}>
+                  <Ionicons name="people" size={24} color="#7B6FE8" />
+                </View>
+                <View>
+                  <Text style={styles.modalTitle}>Pending Requests</Text>
+                  <Text style={styles.modalSubtitle}>
+                    {pendingRequests.length} {pendingRequests.length === 1 ? 'person' : 'people'} waiting for approval
+                  </Text>
+                </View>
+              </View>
+              <TouchableOpacity
+                onPress={() => setShowPendingModal(false)}
+                style={styles.modalCloseBtn}
+                activeOpacity={0.7}
+              >
+                <Ionicons name="close" size={24} color="#5A5A7A" />
+              </TouchableOpacity>
+            </View>
+
+            {/* Modal Content */}
+            <ScrollView
+              style={styles.modalScroll}
+              contentContainerStyle={styles.modalScrollContent}
+              showsVerticalScrollIndicator={false}
+            >
+              {pendingRequests.length === 0 ? (
+                <View style={styles.emptyModal}>
+                  <Ionicons name="checkmark-circle-outline" size={64} color="#3AAF72" />
+                  <Text style={styles.emptyModalTitle}>All Caught Up!</Text>
+                  <Text style={styles.emptyModalText}>
+                    No pending approval requests at the moment.
+                  </Text>
+                </View>
+              ) : (
+                pendingRequests.map((req) => {
+                  const cfg = ROLE_CONFIG[req.role] ?? ROLE_CONFIG.parent;
+                  const isActing = actionLoading === req.id;
+                  const nameInitials = req.full_name
+                    ? req.full_name.split(' ').map((n) => n[0]).join('').toUpperCase().slice(0, 2)
+                    : '??';
+                  return (
+                    <View key={req.id} style={styles.modalRequestCard}>
+                      {/* Avatar + info */}
+                      <View style={styles.modalReqTop}>
+                        <View style={[styles.modalReqAvatar, { backgroundColor: cfg.bg }]}>
+                          <Text style={[styles.modalReqAvatarText, { color: cfg.color }]}>
+                            {nameInitials}
+                          </Text>
+                        </View>
+                        <View style={styles.modalReqInfo}>
+                          <Text style={styles.modalReqName} numberOfLines={1}>
+                            {req.full_name ?? 'Unknown User'}
+                          </Text>
+                          <View style={styles.modalReqRoleRow}>
+                            <View style={[styles.modalReqRoleBadge, { backgroundColor: cfg.bg }]}>
+                              <Ionicons name={cfg.icon} size={12} color={cfg.color} />
+                              <Text style={[styles.modalReqRoleText, { color: cfg.color }]}>
+                                {cfg.label}
+                              </Text>
+                            </View>
+                            <Text style={styles.modalReqTime}>{timeAgo(req.created_at)}</Text>
+                          </View>
+                        </View>
+                      </View>
+
+                      {/* Actions */}
+                      {isActing ? (
+                        <View style={styles.modalReqActions}>
+                          <ActivityIndicator size="small" color="#7B6FE8" />
+                        </View>
+                      ) : (
+                        <View style={styles.modalReqActions}>
+                          <TouchableOpacity
+                            style={styles.modalRejectBtn}
+                            onPress={() => handleReject(req.id, req.full_name ?? '')}
+                            activeOpacity={0.8}
+                          >
+                            <Ionicons name="close" size={18} color="#E05A5A" />
+                            <Text style={styles.modalRejectText}>Reject</Text>
+                          </TouchableOpacity>
+                          <TouchableOpacity
+                            style={styles.modalApproveBtn}
+                            onPress={() => handleApprove(req.id, req.full_name ?? '')}
+                            activeOpacity={0.8}
+                          >
+                            <Ionicons name="checkmark" size={18} color="#FFFFFF" />
+                            <Text style={styles.modalApproveText}>Approve</Text>
+                          </TouchableOpacity>
+                        </View>
+                      )}
+                    </View>
+                  );
+                })
+              )}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -346,23 +669,77 @@ const styles = StyleSheet.create({
     width: 10, height: 10, borderRadius: 5,
     backgroundColor: '#3AAF72', borderWidth: 2, borderColor: '#FFFFFF',
   },
+  avatarBadge: {
+    position: 'absolute', top: -2, right: -2,
+    minWidth: 18, height: 18, borderRadius: 9,
+    backgroundColor: '#E05A5A', justifyContent: 'center', alignItems: 'center',
+    borderWidth: 2, borderColor: '#EDE9F6', paddingHorizontal: 3,
+  },
+  avatarBadgeText: { fontSize: 10, fontWeight: '800', color: '#fff' },
 
+  joinCodeRow: {
+    flexDirection: 'row',
+    gap: 12,
+  },
   joinCodeCard: {
-    backgroundColor: '#7B6FE8', borderRadius: 20, padding: 20,
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    backgroundColor: '#7B6FE8', borderRadius: 20, padding: 16,
     shadowColor: '#7B6FE8', shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.3, shadowRadius: 12, elevation: 6,
+    gap: 6,
   },
-  joinCodeLeft: { gap: 4 },
+  teacherJoinCodeCard: {
+    backgroundColor: '#2A9D6E',
+    shadowColor: '#2A9D6E',
+  },
   joinCodeLabelRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
-  joinCodeLabel: { fontSize: 12, color: 'rgba(255,255,255,0.8)', fontWeight: '600' },
-  joinCodeValue: { fontSize: 32, fontWeight: '900', color: '#FFFFFF', letterSpacing: 6 },
-  joinCodeHint: { fontSize: 11, color: 'rgba(255,255,255,0.7)', marginTop: 2 },
+  joinCodeLabel: { fontSize: 11, color: 'rgba(255,255,255,0.85)', fontWeight: '700', letterSpacing: 0.3 },
+  joinCodeValue: { fontSize: 22, fontWeight: '900', color: '#FFFFFF', letterSpacing: 4 },
+  joinCodeFooter: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 2 },
+  joinCodeHint: { fontSize: 10, color: 'rgba(255,255,255,0.7)', flex: 1 },
+  joinCodeMissing: { fontSize: 13, fontWeight: '700', color: 'rgba(255,255,255,0.9)', fontStyle: 'italic' },
   copyBadge: {
-    backgroundColor: 'rgba(255,255,255,0.2)', borderRadius: 12,
-    padding: 12, alignItems: 'center', gap: 4,
+    backgroundColor: 'rgba(255,255,255,0.25)', borderRadius: 8,
+    padding: 6, alignItems: 'center', justifyContent: 'center',
   },
-  copyText: { fontSize: 11, color: '#fff', fontWeight: '600' },
+
+  // Pending Requests
+  sectionHeaderRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  pendingCountBadge: {
+    backgroundColor: '#E05A5A', borderRadius: 10,
+    paddingHorizontal: 8, paddingVertical: 2,
+  },
+  pendingCountText: { fontSize: 12, fontWeight: '800', color: '#fff' },
+  requestList: { gap: 10 },
+  requestCard: {
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: '#FFFFFF', borderRadius: 16,
+    padding: 14, gap: 12,
+    shadowColor: '#9B8FE0', shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.07, shadowRadius: 8, elevation: 2,
+  },
+  reqAvatar: {
+    width: 44, height: 44, borderRadius: 22,
+    justifyContent: 'center', alignItems: 'center',
+  },
+  reqAvatarText: { fontSize: 15, fontWeight: '800' },
+  reqInfo: { flex: 1, gap: 4 },
+  reqName: { fontSize: 14, fontWeight: '700', color: '#1A1A2E' },
+  reqRoleRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  reqRoleBadge: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3,
+  },
+  reqRoleText: { fontSize: 11, fontWeight: '700' },
+  reqTime: { fontSize: 11, color: '#9A9AB0' },
+  reqActions: { flexDirection: 'row', gap: 8 },
+  rejectBtn: {
+    width: 34, height: 34, borderRadius: 10,
+    backgroundColor: '#FFF0F0', justifyContent: 'center', alignItems: 'center',
+  },
+  approveBtn: {
+    width: 34, height: 34, borderRadius: 10,
+    backgroundColor: '#2A9D6E', justifyContent: 'center', alignItems: 'center',
+  },
 
   statsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
   statCard: { width: '48%', borderRadius: 20, padding: 16, gap: 8 },
@@ -388,6 +765,22 @@ const styles = StyleSheet.create({
 
   quickActions: { flexDirection: 'row', gap: 12 },
   actionBtn: { flex: 1, borderRadius: 16, padding: 16, alignItems: 'center', gap: 8 },
+  actionIconWrapper: { position: 'relative' },
+  actionBadge: {
+    position: 'absolute',
+    top: -6,
+    right: -6,
+    minWidth: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: '#E05A5A',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
+    paddingHorizontal: 4,
+  },
+  actionBadgeText: { fontSize: 11, fontWeight: '800', color: '#fff' },
   actionLabel: { fontSize: 11, fontWeight: '600', color: '#4A4A6A', textAlign: 'center', lineHeight: 15 },
 
   activityList: { gap: 10 },
@@ -403,4 +796,212 @@ const styles = StyleSheet.create({
   activityDot: { width: 8, height: 8, borderRadius: 4 },
   emptyActivity: { alignItems: 'center', padding: 32, backgroundColor: '#FFFFFF', borderRadius: 16, gap: 8 },
   emptyText: { fontSize: 14, color: '#9A9AB0', fontWeight: '500' },
+
+  // Realtime notification banner
+  notifBanner: {
+    position: 'absolute',
+    top: 52,
+    left: 16,
+    right: 16,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 18,
+    padding: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    shadowColor: '#7B6FE8',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.18,
+    shadowRadius: 16,
+    elevation: 12,
+    borderLeftWidth: 4,
+    borderLeftColor: '#7B6FE8',
+  },
+  notifAvatar: {
+    width: 40, height: 40, borderRadius: 20,
+    justifyContent: 'center', alignItems: 'center',
+  },
+  notifText: { flex: 1, gap: 2 },
+  notifTitle: { fontSize: 12, fontWeight: '700', color: '#7B6FE8', textTransform: 'uppercase', letterSpacing: 0.5 },
+  notifBody: { fontSize: 13, color: '#3A3A5A', lineHeight: 18 },
+  notifName: { fontWeight: '700', color: '#1A1A2E' },
+  notifRole: { fontWeight: '700', color: '#7B6FE8' },
+  notifClose: { padding: 4 },
+
+  // Pending Requests Modal
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'flex-end',
+  },
+  modalContainer: {
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    maxHeight: '85%',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 20,
+    elevation: 20,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingTop: 24,
+    paddingBottom: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F0EEF8',
+  },
+  modalHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    flex: 1,
+  },
+  modalIconBox: {
+    width: 48,
+    height: 48,
+    borderRadius: 14,
+    backgroundColor: '#E8E4F8',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: '#1A1A2E',
+  },
+  modalSubtitle: {
+    fontSize: 13,
+    color: '#7A7A9D',
+    marginTop: 2,
+  },
+  modalCloseBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#F4F3FA',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalScroll: {
+    flex: 1,
+  },
+  modalScrollContent: {
+    padding: 20,
+    gap: 12,
+  },
+  emptyModal: {
+    alignItems: 'center',
+    paddingVertical: 60,
+    gap: 12,
+  },
+  emptyModalTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#1A1A2E',
+  },
+  emptyModalText: {
+    fontSize: 14,
+    color: '#7A7A9D',
+    textAlign: 'center',
+  },
+  modalRequestCard: {
+    backgroundColor: '#F9F8FD',
+    borderRadius: 18,
+    padding: 16,
+    gap: 14,
+    borderWidth: 1,
+    borderColor: '#E8E6F4',
+  },
+  modalReqTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  modalReqAvatar: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalReqAvatarText: {
+    fontSize: 18,
+    fontWeight: '800',
+  },
+  modalReqInfo: {
+    flex: 1,
+    gap: 6,
+  },
+  modalReqName: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#1A1A2E',
+  },
+  modalReqRoleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  modalReqRoleBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  modalReqRoleText: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  modalReqTime: {
+    fontSize: 12,
+    color: '#9A9AB0',
+  },
+  modalReqActions: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  modalRejectBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: '#FFF0F0',
+    borderRadius: 12,
+    paddingVertical: 12,
+    borderWidth: 1,
+    borderColor: '#FFD8D8',
+  },
+  modalRejectText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#E05A5A',
+  },
+  modalApproveBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: '#2A9D6E',
+    borderRadius: 12,
+    paddingVertical: 12,
+    shadowColor: '#2A9D6E',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  modalApproveText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
 });

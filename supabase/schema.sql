@@ -12,14 +12,17 @@ create table if not exists public.schools (
 
 alter table public.schools enable row level security;
 
+drop policy if exists "Authenticated users can view schools" on public.schools;
 create policy "Authenticated users can view schools"
   on public.schools for select
-  using (auth.role() = 'authenticated');
+  using (true);
 
+drop policy if exists "Admin can insert schools" on public.schools;
 create policy "Admin can insert schools"
   on public.schools for insert
   with check (auth.role() = 'authenticated');
 
+drop policy if exists "Admin can update schools" on public.schools;
 create policy "Admin can update schools"
   on public.schools for update
   using (auth.role() = 'authenticated');
@@ -36,10 +39,12 @@ create table if not exists public.students (
 
 alter table public.students enable row level security;
 
+drop policy if exists "Authenticated users can view students" on public.students;
 create policy "Authenticated users can view students"
   on public.students for select
   using (auth.role() = 'authenticated');
 
+drop policy if exists "Admin can manage students" on public.students;
 create policy "Admin can manage students"
   on public.students for all
   using (auth.role() = 'authenticated');
@@ -57,10 +62,12 @@ create table if not exists public.attendance (
 
 alter table public.attendance enable row level security;
 
+drop policy if exists "Authenticated users can view attendance" on public.attendance;
 create policy "Authenticated users can view attendance"
   on public.attendance for select
   using (auth.role() = 'authenticated');
 
+drop policy if exists "Admin/Teacher can manage attendance" on public.attendance;
 create policy "Admin/Teacher can manage attendance"
   on public.attendance for all
   using (auth.role() = 'authenticated');
@@ -80,10 +87,12 @@ create table if not exists public.fees (
 
 alter table public.fees enable row level security;
 
+drop policy if exists "Authenticated users can view fees" on public.fees;
 create policy "Authenticated users can view fees"
   on public.fees for select
   using (auth.role() = 'authenticated');
 
+drop policy if exists "Admin/Accountant can manage fees" on public.fees;
 create policy "Admin/Accountant can manage fees"
   on public.fees for all
   using (auth.role() = 'authenticated');
@@ -101,10 +110,12 @@ create table if not exists public.holidays (
 
 alter table public.holidays enable row level security;
 
+drop policy if exists "Authenticated users can view holidays" on public.holidays;
 create policy "Authenticated users can view holidays"
   on public.holidays for select
   using (auth.role() = 'authenticated');
 
+drop policy if exists "Admin can manage holidays" on public.holidays;
 create policy "Admin can manage holidays"
   on public.holidays for all
   using (auth.role() = 'authenticated');
@@ -123,10 +134,12 @@ create table if not exists public.activity_log (
 
 alter table public.activity_log enable row level security;
 
+drop policy if exists "Authenticated users can view activity" on public.activity_log;
 create policy "Authenticated users can view activity"
   on public.activity_log for select
   using (auth.role() = 'authenticated');
 
+drop policy if exists "Authenticated users can insert activity" on public.activity_log;
 create policy "Authenticated users can insert activity"
   on public.activity_log for insert
   with check (auth.role() = 'authenticated');

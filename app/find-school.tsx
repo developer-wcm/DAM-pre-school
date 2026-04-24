@@ -1,8 +1,10 @@
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useRef, useState } from 'react';
 import {
+    ActivityIndicator,
+    Alert,
     KeyboardAvoidingView,
     Platform,
     StyleSheet,
@@ -11,12 +13,19 @@ import {
     TouchableOpacity,
     View,
 } from 'react-native';
+import { supabase } from '../lib/supabase';
 
-const CODE_LENGTH = 6;
+const GENERAL_CODE_LENGTH = 6;
+const TEACHER_CODE_LENGTH = 7; // T + 6 chars
 
 export default function FindSchoolScreen() {
   const router = useRouter();
+  const { role } = useLocalSearchParams<{ role: string }>();
+  const isTeacher = role === 'teacher';
+  const CODE_LENGTH = isTeacher ? TEACHER_CODE_LENGTH : GENERAL_CODE_LENGTH;
+
   const [code, setCode] = useState<string[]>(Array(CODE_LENGTH).fill(''));
+  const [loading, setLoading] = useState(false);
   const inputs = useRef<(TextInput | null)[]>([]);
 
   const handleChange = (text: string, index: number) => {
@@ -35,6 +44,65 @@ export default function FindSchoolScreen() {
 
   const isFilled = code.every((c) => c !== '');
 
+  async function handleJoin() {
+    if (!isFilled) return;
+
+    const enteredCode = code.join('');
+    setLoading(true);
+
+    try {
+      // Try teacher code first if role is teacher
+      if (role === 'teacher') {
+        const { data, error } = await supabase
+          .from('schools')
+          .select('join_code, name, teacher_join_code')
+          .ilike('teacher_join_code', enteredCode)
+          .maybeSingle();
+
+        if (error) throw error;
+
+        if (data) {
+          // Valid teacher code
+          router.push({
+            pathname: '/sign-up',
+            params: { role: 'teacher', schoolId: data.join_code, schoolName: data.name },
+          });
+          return;
+        }
+
+        // Code not found for teacher
+        Alert.alert(
+          'Invalid Code',
+          'This code is not a valid teacher join code. Please ask your admin for the correct teacher code.',
+        );
+        return;
+      }
+
+      // For parent / other roles — use the general join_code
+      const { data, error } = await supabase
+        .from('schools')
+        .select('join_code, name')
+        .ilike('join_code', enteredCode)
+        .maybeSingle();
+
+      if (error) throw error;
+
+      if (data) {
+        router.push({
+          pathname: '/sign-up',
+          params: { role: role ?? 'parent', schoolId: data.join_code, schoolName: data.name },
+        });
+        return;
+      }
+
+      Alert.alert('Invalid Code', 'No school found with this code. Please check and try again.');
+    } catch (e: any) {
+      Alert.alert('Error', e?.message ?? 'Something went wrong. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  }
+
   return (
     <LinearGradient colors={['#EDE9F6', '#F0EEF8', '#EAF0F8']} style={styles.container}>
       <KeyboardAvoidingView
@@ -48,15 +116,34 @@ export default function FindSchoolScreen() {
         <View style={styles.content}>
           {/* Icon */}
           <View style={styles.illustrationWrapper}>
-            <LinearGradient colors={['#A78BFA', '#7B6FE8']} style={styles.illustrationBox}>
-              <Ionicons name="business" size={52} color="#fff" />
+            <LinearGradient
+              colors={isTeacher ? ['#2A9D6E', '#3AAF72'] : ['#A78BFA', '#7B6FE8']}
+              style={styles.illustrationBox}
+            >
+              <Ionicons name={isTeacher ? 'school' : 'business'} size={52} color="#fff" />
             </LinearGradient>
           </View>
 
-          <Text style={styles.title}>Find Your School</Text>
-          <Text style={styles.subtitle}>
-            Enter the 6-digit code provided{'\n'}by your preschool to join.
+          <Text style={styles.title}>
+            {isTeacher ? 'Enter Teacher Code' : 'Find Your School'}
           </Text>
+          <Text style={styles.subtitle}>
+            {isTeacher
+              ? 'Enter the 6-digit teacher code\nprovided by your school admin.'
+              : 'Enter the 6-digit code provided\nby your preschool to join.'}
+          </Text>
+
+          {/* Role badge */}
+          <View style={[styles.roleBadge, { backgroundColor: isTeacher ? '#D4F4E8' : '#E8E4F8' }]}>
+            <Ionicons
+              name={isTeacher ? 'book-outline' : 'people-outline'}
+              size={14}
+              color={isTeacher ? '#2A9D6E' : '#7B6FE8'}
+            />
+            <Text style={[styles.roleBadgeText, { color: isTeacher ? '#2A9D6E' : '#7B6FE8' }]}>
+              Joining as {isTeacher ? 'Teacher' : (role ?? 'Parent')}
+            </Text>
+          </View>
 
           {/* OTP boxes */}
           <View style={styles.otpRow}>
@@ -66,8 +153,10 @@ export default function FindSchoolScreen() {
                 ref={(ref) => { inputs.current[i] = ref; }}
                 style={[
                   styles.otpBox,
+                  isTeacher && styles.otpBoxSmall,
                   code[i] ? styles.otpBoxFilled : null,
                   i === code.findIndex((c) => c === '') ? styles.otpBoxActive : null,
+                  isTeacher && code[i] ? styles.otpBoxTeacher : null,
                 ]}
                 value={code[i]}
                 onChangeText={(text) => handleChange(text, i)}
@@ -76,8 +165,9 @@ export default function FindSchoolScreen() {
                 keyboardType="default"
                 autoCapitalize="characters"
                 textAlign="center"
-                selectionColor="#7B6FE8"
+                selectionColor={isTeacher ? '#2A9D6E' : '#7B6FE8'}
                 returnKeyType="next"
+                editable={!loading}
               />
             ))}
           </View>
@@ -88,16 +178,27 @@ export default function FindSchoolScreen() {
           </Text>
 
           <TouchableOpacity
-            activeOpacity={isFilled ? 0.85 : 1}
-            onPress={() => { if (isFilled) router.push('/sign-up'); }}
+            activeOpacity={isFilled && !loading ? 0.85 : 1}
+            onPress={handleJoin}
+            disabled={!isFilled || loading}
           >
             <LinearGradient
-              colors={isFilled ? ['#7B6FE8', '#9B8FF8'] : ['#C4BEF5', '#C4BEF5']}
+              colors={
+                isFilled && !loading
+                  ? isTeacher ? ['#2A9D6E', '#3AAF72'] : ['#7B6FE8', '#9B8FF8']
+                  : ['#C4BEF5', '#C4BEF5']
+              }
               start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
               style={styles.joinButton}
             >
-              <Text style={styles.joinButtonText}>Join School</Text>
-              <Ionicons name="arrow-forward" size={18} color="#fff" />
+              {loading ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <>
+                  <Text style={styles.joinButtonText}>Join School</Text>
+                  <Ionicons name="arrow-forward" size={18} color="#fff" />
+                </>
+              )}
             </LinearGradient>
           </TouchableOpacity>
         </View>
@@ -123,7 +224,12 @@ const styles = StyleSheet.create({
   illustrationBox: { width: 100, height: 100, borderRadius: 24, justifyContent: 'center', alignItems: 'center' },
   title: { fontSize: 28, fontWeight: '800', color: '#1A1A2E', letterSpacing: -0.5 },
   subtitle: { fontSize: 15, color: '#7A7A9D', textAlign: 'center', lineHeight: 23 },
-  otpRow: { flexDirection: 'row', gap: 10, marginTop: 8 },
+  roleBadge: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    borderRadius: 20, paddingHorizontal: 14, paddingVertical: 8,
+  },
+  roleBadgeText: { fontSize: 13, fontWeight: '700' },
+  otpRow: { flexDirection: 'row', gap: 8, marginTop: 8 },
   otpBox: {
     width: 48, height: 56, borderRadius: 14,
     backgroundColor: '#FFFFFF', fontSize: 20, fontWeight: '700', color: '#1A1A2E',
@@ -131,8 +237,10 @@ const styles = StyleSheet.create({
     shadowColor: '#9B8FE0', shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.08, shadowRadius: 6, elevation: 2,
   },
+  otpBoxSmall: { width: 40, fontSize: 18 },
   otpBoxActive: { borderColor: '#7B6FE8' },
   otpBoxFilled: { borderColor: '#7B6FE8', backgroundColor: '#F5F3FF' },
+  otpBoxTeacher: { borderColor: '#2A9D6E', backgroundColor: '#F0FBF6' },
   contactText: { fontSize: 13, color: '#7A7A9D' },
   contactLink: { color: '#5B4FD4', fontWeight: '600', textDecorationLine: 'underline' },
   joinButton: {

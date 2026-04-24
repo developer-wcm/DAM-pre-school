@@ -27,7 +27,7 @@ function getPasswordStrength(password: string) {
 
 export default function SignUpScreen() {
   const router = useRouter();
-  const { role, schoolId } = useLocalSearchParams<{ role: string; schoolId: string }>();
+  const { role, schoolId, schoolName } = useLocalSearchParams<{ role: string; schoolId: string; schoolName: string }>();
   const { signUpWithEmail, signInWithGoogle } = useAuth();
 
   const [fullName, setFullName] = useState('');
@@ -84,6 +84,17 @@ export default function SignUpScreen() {
           <View style={styles.pageHeader}>
             <Text style={styles.pageTitle}>Create Account</Text>
             <Text style={styles.pageSubtitle}>Join DMA PreSchool</Text>
+            {schoolName ? (
+              <View style={styles.schoolBadge}>
+                <Ionicons name="business-outline" size={14} color="#7B6FE8" />
+                <Text style={styles.schoolBadgeText}>{schoolName}</Text>
+                {role === 'teacher' && (
+                  <View style={styles.teacherTag}>
+                    <Text style={styles.teacherTagText}>Teacher</Text>
+                  </View>
+                )}
+              </View>
+            ) : null}
           </View>
 
           <View style={styles.card}>
@@ -263,4 +274,16 @@ const styles = StyleSheet.create({
 
   loginText: { fontSize: 14, color: '#5A5A7A', textAlign: 'center' },
   loginLink: { color: '#7B6FE8', fontWeight: '600' },
+  schoolBadge: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    backgroundColor: '#E8E4F8', borderRadius: 20,
+    paddingHorizontal: 12, paddingVertical: 7,
+    alignSelf: 'flex-start', marginTop: 4,
+  },
+  schoolBadgeText: { fontSize: 13, fontWeight: '600', color: '#7B6FE8' },
+  teacherTag: {
+    backgroundColor: '#2A9D6E', borderRadius: 10,
+    paddingHorizontal: 8, paddingVertical: 2, marginLeft: 4,
+  },
+  teacherTagText: { fontSize: 10, fontWeight: '800', color: '#fff' },
 });

@@ -37,6 +37,27 @@ values (
 )
 on conflict (join_code) do update set name = 'DMA PreSchool';
 
+-- Step 2b: Ensure teacher_join_code is set for the demo school
+do $$
+declare
+  new_code text;
+begin
+  if exists (
+    select 1 from public.schools
+    where join_code = 'DEMO01' and teacher_join_code is null
+  ) then
+    loop
+      new_code := 'T' || upper(substring(replace(gen_random_uuid()::text, '-', ''), 1, 6));
+      exit when not exists (
+        select 1 from public.schools where teacher_join_code = new_code
+      );
+    end loop;
+    update public.schools set teacher_join_code = new_code where join_code = 'DEMO01';
+    raise notice 'Generated teacher_join_code: %', new_code;
+  end if;
+end;
+$$;
+
 -- Step 3: Upsert admin profile
 insert into public.profiles (id, full_name, role, school_id, approved)
 select id, 'Demo Admin', 'admin', 'DEMO01', true

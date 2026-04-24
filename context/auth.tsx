@@ -1,7 +1,10 @@
 import { Session, User } from '@supabase/supabase-js';
 import { useRouter, useSegments } from 'expo-router';
-import { createContext, useContext, useEffect, useState } from 'react';
+import * as WebBrowser from 'expo-web-browser';
+import { createContext, useContext, useEffect, useRef, useState } from 'react';
 import { supabase } from '../lib/supabase';
+
+WebBrowser.maybeCompleteAuthSession();
 
 export type UserRole = 'admin' | 'teacher' | 'parent' | 'accountant' | null;
 
@@ -34,81 +37,76 @@ const AuthContext = createContext<AuthContextType | null>(null);
 
 function roleToRoute(role: UserRole): string {
   switch (role) {
-    case 'admin':
-      return '/(dashboard)';
-    case 'teacher':
-      return '/(teacher)';
-    case 'parent':
-      return '/(parent)';
-    case 'accountant':
-      return '/(accountant)';
-    default:
-      return '/login';
+    case 'admin':      return '/(dashboard)';
+    case 'teacher':    return '/(teacher)';
+    case 'parent':     return '/(parent)';
+    case 'accountant': return '/(accountant)';
+    default:           return '/login';
   }
 }
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [session, setSession] = useState<Session | null>(null);
-  const [user, setUser] = useState<User | null>(null);
-  const [profile, setProfile] = useState<Profile | null>(null);
-  const [loading, setLoading] = useState(true);
-  const router = useRouter();
+  const [session, setSession]   = useState<Session | null>(null);
+  const [user, setUser]         = useState<User | null>(null);
+  const [profile, setProfile]   = useState<Profile | null>(null);
+  const [loading, setLoading]   = useState(true);
+  const router   = useRouter();
   const segments = useSegments();
 
-  // Fetch profile from Supabase
+  // Track whether we've already navigated to avoid loops
+  const hasNavigated = useRef(false);
+
+  // ── Fetch profile ─────────────────────────────────────────────────────────
   async function fetchProfile(userId: string): Promise<Profile | null> {
     const { data, error } = await supabase
       .from('profiles')
       .select('*')
       .eq('id', userId)
       .single();
-
-    if (error || !data) return null;
+    if (error) {
+      console.warn('fetchProfile error:', error.message);
+      return null;
+    }
     return data as Profile;
   }
 
-  // Route guard — runs whenever session or segments change
+  // ── Route guard ───────────────────────────────────────────────────────────
   useEffect(() => {
     if (loading) return;
 
-    const inAuthGroup =
-      segments[0] === undefined ||
-      segments[0] === 'index' ||
-      segments[0] === 'login' ||
-      segments[0] === 'sign-up' ||
-      segments[0] === 'role-selection' ||
-      segments[0] === 'find-school' ||
-      segments[0] === 'parental-consent' ||
-      segments[0] === 'approval-pending' ||
-      segments[0] === 'privacy-notice';
+    const publicScreens = [
+      undefined, 'index', 'login', 'sign-up',
+      'role-selection', 'find-school', 'parental-consent',
+      'approval-pending', 'privacy-notice', 'auth',
+    ];
+    const onPublicScreen = publicScreens.includes(segments[0] as any);
 
+    // Not logged in
     if (!session) {
-      // Not logged in — send to welcome
-      if (!inAuthGroup) {
-        router.replace('/');
-      }
+      if (!onPublicScreen) router.replace('/login');
       return;
     }
 
+    // Logged in but profile not loaded yet — wait
     if (!profile) return;
 
-    // Awaiting admin approval
+    // Awaiting approval
     if (!profile.approved) {
       router.replace('/approval-pending');
       return;
     }
 
-    // Already on the right dashboard — do nothing
+    // Navigate to role dashboard
     const target = roleToRoute(profile.role);
-    const currentGroup = `/(${segments[0]?.replace(/[()]/g, '')})`;
-    if (currentGroup === target) return;
+    const currentGroup = `/(${(segments[0] ?? '').replace(/[()]/g, '')})`;
+    if (currentGroup !== target) {
+      router.replace(target as any);
+    }
+  }, [session, profile, loading, segments[0]]);
 
-    // Redirect to role dashboard
-    router.replace(target as any);
-  }, [session, profile, loading]);
-
-  // Listen to Supabase auth state
+  // ── Auth state listener ───────────────────────────────────────────────────
   useEffect(() => {
+    // Initial session check
     supabase.auth.getSession().then(async ({ data: { session: s } }) => {
       setSession(s);
       setUser(s?.user ?? null);
@@ -119,31 +117,46 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setLoading(false);
     });
 
-    const { data: listener } = supabase.auth.onAuthStateChange(async (_event, s) => {
+    // Listen for auth changes (login, logout, token refresh)
+    const { data: listener } = supabase.auth.onAuthStateChange(async (event, s) => {
+      console.log('Auth event:', event);
       setSession(s);
       setUser(s?.user ?? null);
+
       if (s?.user) {
         const p = await fetchProfile(s.user.id);
         setProfile(p);
       } else {
         setProfile(null);
       }
+
+      // Ensure loading is cleared
+      setLoading(false);
     });
 
     return () => listener.subscription.unsubscribe();
   }, []);
 
-  // ── Email / Password Sign In ──────────────────────────────────────────────
+  // ── Sign In ───────────────────────────────────────────────────────────────
   async function signInWithEmail(
     email: string,
     password: string
   ): Promise<{ error: string | null }> {
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) return { error: error.message };
+
+    // Manually fetch profile in case onAuthStateChange is slow
+    if (data.user) {
+      const p = await fetchProfile(data.user.id);
+      setProfile(p);
+      setSession(data.session);
+      setUser(data.user);
+    }
+
     return { error: null };
   }
 
-  // ── Email / Password Sign Up ──────────────────────────────────────────────
+  // ── Sign Up ───────────────────────────────────────────────────────────────
   async function signUpWithEmail(
     email: string,
     password: string,
@@ -151,77 +164,70 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     role: string,
     schoolId?: string
   ): Promise<{ error: string | null }> {
-    const { data, error } = await supabase.auth.signUp({ email, password });
+    const { data, error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: {
+        data: { full_name: fullName, role, school_id: schoolId ?? null },
+      },
+    });
     if (error) return { error: error.message };
     if (!data.user) return { error: 'Sign up failed. Please try again.' };
-
-    // Insert profile row
-    const { error: profileError } = await supabase.from('profiles').insert({
-      id: data.user.id,
-      full_name: fullName,
-      role,
-      school_id: schoolId ?? null,
-      approved: false,
-    });
-
-    if (profileError) return { error: profileError.message };
     return { error: null };
   }
 
   // ── Google OAuth ──────────────────────────────────────────────────────────
   async function signInWithGoogle(): Promise<{ error: string | null }> {
-    const { data, error } = await supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: {
-        redirectTo: 'preschoolapp://auth/callback',
-        queryParams: {
-          access_type: 'offline',
-          prompt: 'consent',
+    try {
+      const redirectTo = 'preschoolapp://auth/callback';
+      const { data, error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo,
+          skipBrowserRedirect: true,
+          queryParams: { access_type: 'offline', prompt: 'consent' },
         },
-      },
-    });
+      });
+      if (error) return { error: error.message };
+      if (!data?.url) return { error: 'Could not get OAuth URL' };
 
-    if (error) return { error: error.message };
-    if (data?.url) {
-      const { openAuthSessionAsync } = await import('expo-web-browser');
-      const result = await openAuthSessionAsync(data.url, 'preschoolapp://auth/callback');
+      const result = await WebBrowser.openAuthSessionAsync(data.url, redirectTo);
+      if (result.type !== 'success') return { error: null };
 
-      if (result.type === 'success' && result.url) {
-        const url = new URL(result.url);
-        const accessToken = url.searchParams.get('access_token');
-        const refreshToken = url.searchParams.get('refresh_token');
+      const hashPart = result.url.includes('#')
+        ? result.url.split('#')[1]
+        : result.url.split('?')[1];
+      const params = new URLSearchParams(hashPart ?? '');
+      const accessToken  = params.get('access_token');
+      const refreshToken = params.get('refresh_token');
 
-        if (accessToken && refreshToken) {
-          await supabase.auth.setSession({
-            access_token: accessToken,
-            refresh_token: refreshToken,
-          });
-        }
+      if (accessToken && refreshToken) {
+        const { error: sessionError } = await supabase.auth.setSession({
+          access_token: accessToken,
+          refresh_token: refreshToken,
+        });
+        if (sessionError) return { error: sessionError.message };
       }
+      return { error: null };
+    } catch (e: any) {
+      return { error: e?.message ?? 'Google sign-in failed' };
     }
-
-    return { error: null };
   }
 
   // ── Sign Out ──────────────────────────────────────────────────────────────
   async function signOut() {
+    setSession(null);
+    setUser(null);
+    setProfile(null);
     await supabase.auth.signOut();
-    router.replace('/');
+    router.replace('/login');
   }
 
   return (
-    <AuthContext.Provider
-      value={{
-        session,
-        user,
-        profile,
-        loading,
-        signInWithEmail,
-        signUpWithEmail,
-        signInWithGoogle,
-        signOut,
-      }}
-    >
+    <AuthContext.Provider value={{
+      session, user, profile, loading,
+      signInWithEmail, signUpWithEmail, signInWithGoogle, signOut,
+    }}>
       {children}
     </AuthContext.Provider>
   );
