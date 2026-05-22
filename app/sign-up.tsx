@@ -59,8 +59,12 @@ export default function SignUpScreen() {
       email.trim(), password, fullName.trim(), role ?? 'parent', schoolId
     );
     setLoading(false);
-    if (error) { Alert.alert('Sign up failed', error); return; }
-    router.replace('/approval-pending');
+    if (error) { 
+      Alert.alert('Sign up failed', error); 
+      return; 
+    }
+    // Don't manually route - let auth context handle it
+    // It will route to account-pending automatically
   }
 
   async function handleGoogleSignUp() {
