@@ -11,6 +11,7 @@ import {
     TouchableOpacity,
     View,
 } from 'react-native';
+import { COLORS } from '../../constants/admissionTheme';
 
 const TOTAL_STEPS = 5;
 const CURRENT_STEP = 1;
@@ -21,6 +22,7 @@ export default function AdmissionStep1() {
   const router = useRouter();
 
   const [firstName, setFirstName] = useState('');
+  const [middleName, setMiddleName] = useState('');
   const [lastName, setLastName] = useState('');
   const [dob, setDob] = useState('');
   const [gender, setGender] = useState<Gender | null>(null);
@@ -38,7 +40,7 @@ export default function AdmissionStep1() {
   };
 
   return (
-    <LinearGradient colors={['#EDE9F6', '#F0EEF8', '#EAF0F8']} style={styles.container}>
+    <LinearGradient colors={['#F5F7FA', '#E8EAED', '#F0F2F5']} style={styles.container}>
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={styles.keyboardView}
@@ -52,7 +54,7 @@ export default function AdmissionStep1() {
           <View style={styles.headerSpacer} />
         </View>
 
-        {/* Step indicator */}
+          {/* Step indicator */}
         <View style={styles.stepIndicatorWrapper}>
           <View style={styles.stepDots}>
             {Array.from({ length: TOTAL_STEPS }).map((_, i) => {
@@ -68,7 +70,11 @@ export default function AdmissionStep1() {
                       isDone && styles.stepDotDone,
                     ]}
                   >
-                    {isActive && <Text style={styles.stepDotText}>{stepNum}</Text>}
+                    {isDone ? (
+                      <Text style={styles.stepDotCheckmark}>✓</Text>
+                    ) : isActive ? (
+                      <Text style={styles.stepDotText}>{stepNum}</Text>
+                    ) : null}
                   </View>
                   {i < TOTAL_STEPS - 1 && (
                     <View style={[styles.stepLine, isDone && styles.stepLineDone]} />
@@ -89,41 +95,62 @@ export default function AdmissionStep1() {
         >
           {/* Form card */}
           <View style={styles.card}>
-            {/* First Name + Last Name */}
-            <View style={styles.row}>
-              <View style={styles.halfField}>
-                <Text style={styles.fieldLabel}>FIRST NAME <Text style={styles.required}>*</Text></Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder="Arya"
-                  placeholderTextColor="#C0C0D8"
-                  value={firstName}
-                  onChangeText={setFirstName}
-                  autoCapitalize="words"
-                />
+            {/* Section header */}
+            <View style={styles.sectionHeader}>
+              <View style={styles.sectionIconCircle}>
+                <Text style={styles.sectionIcon}>👶</Text>
               </View>
-              <View style={styles.halfField}>
-                <Text style={styles.fieldLabel}>LAST NAME <Text style={styles.required}>*</Text></Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder="Sharma"
-                  placeholderTextColor="#C0C0D8"
-                  value={lastName}
-                  onChangeText={setLastName}
-                  autoCapitalize="words"
-                />
-              </View>
+              <Text style={styles.sectionTitle}>Student Details</Text>
+            </View>
+
+            {/* First Name */}
+            <View style={styles.field}>
+              <Text style={styles.fieldLabel}>First Name <Text style={styles.required}>*</Text></Text>
+              <TextInput
+                style={styles.input}
+                placeholder="Kukkunuru"
+                placeholderTextColor={COLORS.gray}
+                value={firstName}
+                onChangeText={setFirstName}
+                autoCapitalize="words"
+              />
+            </View>
+
+            {/* Middle Name */}
+            <View style={styles.field}>
+              <Text style={styles.fieldLabel}>Middle Name</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="Middle name (optional)"
+                placeholderTextColor={COLORS.gray}
+                value={middleName}
+                onChangeText={setMiddleName}
+                autoCapitalize="words"
+              />
+            </View>
+
+            {/* Last Name */}
+            <View style={styles.field}>
+              <Text style={styles.fieldLabel}>Last Name <Text style={styles.required}>*</Text></Text>
+              <TextInput
+                style={styles.input}
+                placeholder="Sharma"
+                placeholderTextColor={COLORS.gray}
+                value={lastName}
+                onChangeText={setLastName}
+                autoCapitalize="words"
+              />
             </View>
 
             {/* Date of Birth */}
             <View style={styles.field}>
-              <Text style={styles.fieldLabel}>DATE OF BIRTH <Text style={styles.required}>*</Text></Text>
+              <Text style={styles.fieldLabel}>Date of Birth <Text style={styles.required}>*</Text></Text>
               <View style={styles.inputWithIcon}>
                 <Text style={styles.inputPrefixIcon}>📅</Text>
                 <TextInput
                   style={[styles.input, styles.inputFlex]}
                   placeholder="DD/MM/YYYY"
-                  placeholderTextColor="#C0C0D8"
+                  placeholderTextColor={COLORS.gray}
                   value={dob}
                   onChangeText={formatDob}
                   keyboardType="numeric"
@@ -134,7 +161,7 @@ export default function AdmissionStep1() {
 
             {/* Gender */}
             <View style={styles.field}>
-              <Text style={styles.fieldLabel}>GENDER <Text style={styles.required}>*</Text></Text>
+              <Text style={styles.fieldLabel}>Gender <Text style={styles.required}>*</Text></Text>
               <View style={styles.genderRow}>
                 {(['Male', 'Female'] as Gender[]).map((g) => (
                   <TouchableOpacity
@@ -154,22 +181,22 @@ export default function AdmissionStep1() {
             {/* Mother Tongue + Nationality */}
             <View style={styles.row}>
               <View style={styles.halfField}>
-                <Text style={styles.fieldLabel}>MOTHER TONGUE</Text>
+                <Text style={styles.fieldLabel}>Mother Tongue</Text>
                 <TextInput
                   style={styles.input}
                   placeholder="Hindi"
-                  placeholderTextColor="#C0C0D8"
+                  placeholderTextColor={COLORS.gray}
                   value={motherTongue}
                   onChangeText={setMotherTongue}
                   autoCapitalize="words"
                 />
               </View>
               <View style={styles.halfField}>
-                <Text style={styles.fieldLabel}>NATIONALITY</Text>
+                <Text style={styles.fieldLabel}>Nationality</Text>
                 <TextInput
                   style={styles.input}
                   placeholder="Indian"
-                  placeholderTextColor="#C0C0D8"
+                  placeholderTextColor={COLORS.gray}
                   value={nationality}
                   onChangeText={setNationality}
                   autoCapitalize="words"
@@ -179,11 +206,11 @@ export default function AdmissionStep1() {
 
             {/* Address */}
             <View style={styles.field}>
-              <Text style={styles.fieldLabel}>ADDRESS</Text>
+              <Text style={styles.fieldLabel}>Address</Text>
               <TextInput
                 style={[styles.input, styles.textArea]}
                 placeholder="#42, Lavender Lane, Green Park..."
-                placeholderTextColor="#C0C0D8"
+                placeholderTextColor={COLORS.gray}
                 value={address}
                 onChangeText={setAddress}
                 multiline
@@ -194,7 +221,7 @@ export default function AdmissionStep1() {
 
             {/* Aadhaar last 4 digits */}
             <View style={styles.field}>
-              <Text style={styles.fieldLabel}>AADHAAR LAST 4 DIGITS</Text>
+              <Text style={styles.fieldLabel}>Aadhaar Last 4 Digits</Text>
               <View style={styles.aadhaarRow}>
                 <View style={styles.aadhaarPrefix}>
                   <Text style={styles.aadhaarPrefixText}>XXXX-{'\n'}XXXX-</Text>
@@ -202,7 +229,7 @@ export default function AdmissionStep1() {
                 <TextInput
                   style={[styles.input, styles.aadhaarInput]}
                   placeholder="1234"
-                  placeholderTextColor="#C0C0D8"
+                  placeholderTextColor={COLORS.gray}
                   value={aadhaar}
                   onChangeText={(t) => setAadhaar(t.replace(/\D/g, '').slice(0, 4))}
                   keyboardType="numeric"
@@ -215,14 +242,23 @@ export default function AdmissionStep1() {
           <View style={{ height: 100 }} />
         </ScrollView>
 
-        {/* Next Step button */}
+        {/* Bottom buttons */}
         <View style={styles.stickyBottom}>
           <TouchableOpacity
+            style={styles.backBtnBottom}
+            onPress={() => router.back()}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.backBtnText}>Back</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.nextBtnWrapper}
             activeOpacity={0.85}
             onPress={() => router.push('/admission/step-2')}
           >
             <LinearGradient
-              colors={['#5B4FD4', '#7B6FE8']}
+              colors={[COLORS.primary, COLORS.primaryLight]}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 0 }}
               style={styles.nextBtn}
@@ -248,18 +284,18 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 20,
-    paddingTop: 56,
-    paddingBottom: 12,
+    paddingTop: 16,
+    paddingBottom: 16,
     gap: 12,
   },
   backBtn: {
     width: 36,
     height: 36,
     borderRadius: 12,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: COLORS.white,
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: '#9B8FE0',
+    shadowColor: COLORS.primary,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 6,
@@ -267,13 +303,13 @@ const styles = StyleSheet.create({
   },
   backIcon: {
     fontSize: 18,
-    color: '#7B6FE8',
+    color: COLORS.primary,
     fontWeight: '600',
   },
   headerTitle: {
     fontSize: 20,
     fontWeight: '800',
-    color: '#1A1A2E',
+    color: COLORS.textPrimary,
     flex: 1,
   },
   headerSpacer: { width: 36 },
@@ -282,7 +318,7 @@ const styles = StyleSheet.create({
   stepIndicatorWrapper: {
     paddingHorizontal: 20,
     gap: 10,
-    marginBottom: 8,
+    marginBottom: 16,
   },
   stepDots: {
     flexDirection: 'row',
@@ -297,38 +333,43 @@ const styles = StyleSheet.create({
     width: 28,
     height: 28,
     borderRadius: 14,
-    backgroundColor: '#E0DDF5',
+    backgroundColor: COLORS.lightGray,
     justifyContent: 'center',
     alignItems: 'center',
   },
   stepDotActive: {
-    backgroundColor: '#7B6FE8',
-    shadowColor: '#7B6FE8',
+    backgroundColor: COLORS.secondary,
+    shadowColor: COLORS.secondary,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.4,
     shadowRadius: 8,
     elevation: 4,
   },
   stepDotDone: {
-    backgroundColor: '#3AAF72',
+    backgroundColor: COLORS.success,
   },
   stepDotText: {
     fontSize: 13,
     fontWeight: '800',
-    color: '#FFFFFF',
+    color: COLORS.white,
+  },
+  stepDotCheckmark: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: COLORS.white,
   },
   stepLine: {
     flex: 1,
     height: 2,
-    backgroundColor: '#E0DDF5',
+    backgroundColor: COLORS.lightGray,
     marginHorizontal: 4,
   },
   stepLineDone: {
-    backgroundColor: '#3AAF72',
+    backgroundColor: COLORS.success,
   },
   stepLabelBox: {
     alignSelf: 'center',
-    backgroundColor: '#EDE9F6',
+    backgroundColor: COLORS.offWhite,
     borderRadius: 20,
     paddingHorizontal: 16,
     paddingVertical: 6,
@@ -336,7 +377,7 @@ const styles = StyleSheet.create({
   stepLabel: {
     fontSize: 12,
     fontWeight: '600',
-    color: '#7B6FE8',
+    color: COLORS.primary,
   },
 
   // Scroll
@@ -347,15 +388,37 @@ const styles = StyleSheet.create({
 
   // Card
   card: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: COLORS.white,
     borderRadius: 24,
     padding: 20,
-    gap: 18,
-    shadowColor: '#9B8FE0',
+    gap: 16,
+    shadowColor: COLORS.cardShadow,
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.1,
     shadowRadius: 16,
     elevation: 4,
+  },
+
+  // Section header
+  sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginBottom: 2,
+  },
+  sectionIconCircle: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: COLORS.offWhite,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  sectionIcon: { fontSize: 18 },
+  sectionTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: COLORS.textPrimary,
   },
 
   // Fields
@@ -363,26 +426,25 @@ const styles = StyleSheet.create({
   row: { flexDirection: 'row', gap: 12 },
   halfField: { flex: 1, gap: 6 },
   fieldLabel: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: '#9A9AB0',
-    letterSpacing: 0.8,
+    fontSize: 13,
+    fontWeight: '600',
+    color: COLORS.textSecondary,
   },
-  required: { color: '#E05A5A' },
+  required: { color: COLORS.error },
 
   input: {
-    backgroundColor: '#F4F3FA',
+    backgroundColor: COLORS.offWhite,
     borderRadius: 12,
     paddingHorizontal: 14,
     paddingVertical: 13,
     fontSize: 14,
-    color: '#1A1A2E',
+    color: COLORS.textPrimary,
   },
   inputFlex: { flex: 1 },
   inputWithIcon: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#F4F3FA',
+    backgroundColor: COLORS.offWhite,
     borderRadius: 12,
     paddingHorizontal: 14,
     gap: 8,
@@ -397,7 +459,7 @@ const styles = StyleSheet.create({
   // Gender
   genderRow: {
     flexDirection: 'row',
-    backgroundColor: '#F4F3FA',
+    backgroundColor: COLORS.offWhite,
     borderRadius: 12,
     padding: 4,
     gap: 4,
@@ -409,8 +471,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   genderBtnActive: {
-    backgroundColor: '#FFFFFF',
-    shadowColor: '#9B8FE0',
+    backgroundColor: COLORS.white,
+    shadowColor: COLORS.primary,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.12,
     shadowRadius: 6,
@@ -419,10 +481,10 @@ const styles = StyleSheet.create({
   genderText: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#9A9AB0',
+    color: COLORS.gray,
   },
   genderTextActive: {
-    color: '#7B6FE8',
+    color: COLORS.primary,
     fontWeight: '700',
   },
 
@@ -433,7 +495,7 @@ const styles = StyleSheet.create({
     alignItems: 'stretch',
   },
   aadhaarPrefix: {
-    backgroundColor: '#E8E6F4',
+    backgroundColor: COLORS.lightGray,
     borderRadius: 12,
     paddingHorizontal: 14,
     paddingVertical: 10,
@@ -443,7 +505,7 @@ const styles = StyleSheet.create({
   aadhaarPrefixText: {
     fontSize: 12,
     fontWeight: '700',
-    color: '#7A7A9D',
+    color: COLORS.textSecondary,
     textAlign: 'center',
     lineHeight: 18,
   },
@@ -451,11 +513,37 @@ const styles = StyleSheet.create({
     flex: 1,
   },
 
-  // Next button
+  // Bottom buttons
   stickyBottom: {
+    flexDirection: 'row',
     paddingHorizontal: 20,
     paddingVertical: 16,
+    gap: 12,
     backgroundColor: 'transparent',
+  },
+  backBtnBottom: {
+    flex: 1,
+    borderRadius: 50,
+    paddingVertical: 16,
+    borderWidth: 2,
+    borderColor: COLORS.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  backBtnText: {
+    color: COLORS.primary,
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  nextBtnWrapper: {
+    flex: 2,
+    borderRadius: 50,
+    overflow: 'hidden',
+    shadowColor: COLORS.primary,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.35,
+    shadowRadius: 12,
+    elevation: 8,
   },
   nextBtn: {
     borderRadius: 50,
@@ -464,29 +552,24 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    shadowColor: '#5B4FD4',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.35,
-    shadowRadius: 12,
-    elevation: 8,
   },
   nextBtnText: {
-    color: '#FFFFFF',
-    fontSize: 17,
+    color: COLORS.white,
+    fontSize: 16,
     fontWeight: '700',
     letterSpacing: 0.3,
   },
   nextArrowCircle: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     backgroundColor: 'rgba(255,255,255,0.25)',
     justifyContent: 'center',
     alignItems: 'center',
   },
   nextArrow: {
-    fontSize: 18,
-    color: '#FFFFFF',
+    fontSize: 16,
+    color: COLORS.white,
     fontWeight: '700',
   },
 });

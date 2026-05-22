@@ -1,5 +1,7 @@
+import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import React, { useState } from 'react';
 import {
     ScrollView,
     StyleSheet,
@@ -7,6 +9,7 @@ import {
     TouchableOpacity,
     View,
 } from 'react-native';
+import { COLORS } from '../constants/admissionTheme';
 
 const WHY_WE_COLLECT = [
   { type: 'Attendance', purpose: 'Safety & Daily Tracking' },
@@ -25,13 +28,29 @@ const YOUR_RIGHTS = [
 
 export default function PrivacyNoticeScreen() {
   const router = useRouter();
+  const params = useLocalSearchParams();
+  const role = params.role as string;
+  const isStaff = role === 'teacher';
+  
+  const [consentChecked, setConsentChecked] = useState(false);
+  const [hasScrolledToBottom, setHasScrolledToBottom] = useState(false);
+
+  const handleScroll = (event: any) => {
+    const { layoutMeasurement, contentOffset, contentSize } = event.nativeEvent;
+    const paddingToBottom = 20;
+    const isAtBottom = layoutMeasurement.height + contentOffset.y >= contentSize.height - paddingToBottom;
+    
+    if (isAtBottom && !hasScrolledToBottom) {
+      setHasScrolledToBottom(true);
+    }
+  };
 
   return (
-    <View style={styles.container}>
+    <LinearGradient colors={COLORS.backgroundGradient} style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.closeBtn} activeOpacity={0.7}>
-          <Text style={styles.closeIcon}>✕</Text>
+          <Text style={styles.closeIcon}>←</Text>
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Privacy Notice</Text>
         <View style={styles.headerSpacer} />
@@ -41,6 +60,8 @@ export default function PrivacyNoticeScreen() {
         style={styles.scroll}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
+        onScroll={handleScroll}
+        scrollEventThrottle={16}
       >
         {/* Last updated */}
         <View style={styles.updatedRow}>
@@ -57,45 +78,70 @@ export default function PrivacyNoticeScreen() {
         {/* ── 1. What We Collect ── */}
         <Text style={styles.sectionTitle}>1. What We Collect</Text>
 
-        {/* Student Information card */}
-        <View style={[styles.infoCard, { backgroundColor: '#E8F4FB' }]}>
-          <View style={styles.infoCardHeader}>
-            <Text style={styles.infoIconEmoji}>🧒</Text>
-            <Text style={[styles.infoCardTitle, { color: '#1A7FA0' }]}>Student Information</Text>
-          </View>
-          {[
-            'Full Name & Date of Birth',
-            'Medical & Allergy Records',
-            'Last 4 digits of Aadhaar (ID verification)',
-            'Performance & Attendance Logs',
-          ].map((item) => (
-            <View key={item} style={styles.bulletRow}>
-              <Text style={[styles.bullet, { color: '#1A7FA0' }]}>•</Text>
-              <Text style={styles.bulletText}>{item}</Text>
+        {isStaff ? (
+          /* Staff - Single merged card */
+          <View style={[styles.infoCard, { backgroundColor: COLORS.primarySoft }]}>
+            <View style={styles.infoCardHeader}>
+              <Text style={styles.infoIconEmoji}>👤</Text>
+              <Text style={[styles.infoCardTitle, { color: COLORS.primary }]}>Personal Information</Text>
             </View>
-          ))}
-        </View>
+            {[
+              'Full Name & Date of Birth',
+              'Aadhaar Card',
+              'Contact Information',
+              'Residential Address',
+              'Performance & Attendance Log',
+            ].map((item) => (
+              <View key={item} style={styles.bulletRow}>
+                <Text style={[styles.bullet, { color: COLORS.primary }]}>•</Text>
+                <Text style={styles.bulletText}>{item}</Text>
+              </View>
+            ))}
+          </View>
+        ) : (
+          /* Parent - Two separate cards */
+          <>
+            {/* Student Information card */}
+            <View style={[styles.infoCard, { backgroundColor: COLORS.primarySoft }]}>
+              <View style={styles.infoCardHeader}>
+                <Text style={styles.infoIconEmoji}>🧒</Text>
+                <Text style={[styles.infoCardTitle, { color: COLORS.primary }]}>Student Information</Text>
+              </View>
+              {[
+                'Full Name & Date of Birth',
+                'Medical & Allergy Records',
+                'Aadhaar Card',
+                'Performance & Attendance Logs',
+              ].map((item) => (
+                <View key={item} style={styles.bulletRow}>
+                  <Text style={[styles.bullet, { color: COLORS.primary }]}>•</Text>
+                  <Text style={styles.bulletText}>{item}</Text>
+                </View>
+              ))}
+            </View>
 
-        {/* Parent / Guardian Information card */}
-        <View style={[styles.infoCard, { backgroundColor: '#EDE8F8' }]}>
-          <View style={styles.infoCardHeader}>
-            <Text style={styles.infoIconEmoji}>👨‍👩‍👧</Text>
-            <Text style={[styles.infoCardTitle, { color: '#7B6FE8' }]}>
-              Parent / Guardian Information
-            </Text>
-          </View>
-          {[
-            'Contact Number & Email Address',
-            'Residential Address',
-            'Emergency Contact Details',
-            'Authorized Pickup List',
-          ].map((item) => (
-            <View key={item} style={styles.bulletRow}>
-              <Text style={[styles.bullet, { color: '#7B6FE8' }]}>•</Text>
-              <Text style={styles.bulletText}>{item}</Text>
+            {/* Parent / Guardian Information card */}
+            <View style={[styles.infoCard, { backgroundColor: COLORS.secondarySoft }]}>
+              <View style={styles.infoCardHeader}>
+                <Text style={styles.infoIconEmoji}>👨‍👩‍👧</Text>
+                <Text style={[styles.infoCardTitle, { color: COLORS.secondary }]}>
+                  Parent / Guardian Information
+                </Text>
+              </View>
+              {[
+                'Contact Number & Email Address',
+                'Residential Address',
+                'Emergency Contact Details',
+                'Authorized Pickup List',
+              ].map((item) => (
+                <View key={item} style={styles.bulletRow}>
+                  <Text style={[styles.bullet, { color: COLORS.secondary }]}>•</Text>
+                  <Text style={styles.bulletText}>{item}</Text>
+                </View>
+              ))}
             </View>
-          ))}
-        </View>
+          </>
+        )}
 
         {/* ── 2. Why We Collect ── */}
         <Text style={styles.sectionTitle}>2. Why We Collect</Text>
@@ -141,7 +187,7 @@ export default function PrivacyNoticeScreen() {
           'Government authorities as mandated by law',
         ].map((item) => (
           <View key={item} style={styles.bulletRow}>
-            <Text style={[styles.bullet, { color: '#7B6FE8' }]}>•</Text>
+            <Text style={[styles.bullet, { color: COLORS.primary }]}>•</Text>
             <Text style={styles.bulletText}>{item}</Text>
           </View>
         ))}
@@ -161,39 +207,72 @@ export default function PrivacyNoticeScreen() {
           data. Access is restricted to authorized personnel only.
         </Text>
 
-        {/* ── 7. Contact Us ── */}
-        <Text style={styles.sectionTitle}>7. Contact Us</Text>
+        {/* Contact box */}
         <View style={styles.contactBox}>
           <Text style={styles.contactText}>📧  privacy@dmapreschool.edu</Text>
           <Text style={styles.contactText}>📞  +91 98765 43210</Text>
-          <Text style={styles.contactText}>🏫  DMA PreSchool, Chennai, Tamil Nadu</Text>
+          <Text style={styles.contactText}>🏫  DMA PreSchool, Electronic City, Bangalore</Text>
         </View>
 
-        {/* Bottom padding for sticky button */}
+        {/* Consent Checkbox */}
+        <TouchableOpacity
+          style={styles.consentRow}
+          activeOpacity={0.7}
+          onPress={() => setConsentChecked(!consentChecked)}
+        >
+          <View style={[styles.checkbox, consentChecked && styles.checkboxChecked]}>
+            {consentChecked && <Ionicons name="checkmark" size={16} color={COLORS.white} />}
+          </View>
+          <Text style={styles.consentText}>
+            I hereby consent to the collection, processing, and storage of my personal data as outlined in this Privacy Notice.
+          </Text>
+        </TouchableOpacity>
+
+        {/* Bottom padding for sticky buttons */}
         <View style={{ height: 24 }} />
       </ScrollView>
 
-      {/* Sticky bottom button */}
-      <View style={styles.stickyBottom}>
-        <TouchableOpacity activeOpacity={0.85} onPress={() => router.back()}>
-          <LinearGradient
-            colors={['#7B6FE8', '#3ABFBF']}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 0 }}
-            style={styles.understandButton}
-          >
-            <Text style={styles.understandText}>I Understand  ✓</Text>
-          </LinearGradient>
-        </TouchableOpacity>
-      </View>
-    </View>
+      {/* Sticky bottom buttons - only show after scrolling to bottom */}
+      {hasScrolledToBottom && (
+        <View style={styles.stickyBottom}>
+          <View style={styles.buttonRow}>
+            <TouchableOpacity
+              style={styles.backButton}
+              activeOpacity={0.85}
+              onPress={() => router.back()}
+            >
+              <Ionicons name="arrow-back" size={18} color={COLORS.primary} />
+              <Text style={styles.backButtonText}>Back</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              activeOpacity={0.85}
+              onPress={() => consentChecked && router.push('/account-pending')}
+              disabled={!consentChecked}
+              style={styles.nextButtonWrapper}
+            >
+              <LinearGradient
+                colors={consentChecked ? [COLORS.primary, COLORS.primaryLight] : [COLORS.buttonDisabled, COLORS.buttonDisabled]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={styles.nextButton}
+              >
+                <Text style={[styles.nextButtonText, !consentChecked && styles.nextButtonTextDisabled]}>
+                  Next Step
+                </Text>
+                <Ionicons name="arrow-forward" size={18} color={consentChecked ? COLORS.white : COLORS.gray} />
+              </LinearGradient>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
+    </LinearGradient>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#FAFAFA',
   },
 
   // Header
@@ -204,24 +283,30 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingTop: 56,
     paddingBottom: 16,
-    backgroundColor: '#FAFAFA',
-    borderBottomWidth: 1,
-    borderBottomColor: '#EFEFEF',
+    backgroundColor: 'transparent',
   },
   closeBtn: {
     width: 36,
     height: 36,
+    borderRadius: 12,
+    backgroundColor: COLORS.white,
     justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: COLORS.primary,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 6,
+    elevation: 2,
   },
   closeIcon: {
     fontSize: 18,
-    color: '#1A1A2E',
+    color: COLORS.primary,
     fontWeight: '600',
   },
   headerTitle: {
-    fontSize: 17,
-    fontWeight: '700',
-    color: '#1A1A2E',
+    fontSize: 20,
+    fontWeight: '800',
+    color: COLORS.textPrimary,
   },
   headerSpacer: {
     width: 36,
@@ -246,19 +331,19 @@ const styles = StyleSheet.create({
   },
   updatedText: {
     fontSize: 13,
-    color: '#9A9AB0',
+    color: COLORS.textSecondary,
     flexShrink: 0,
   },
   updatedLine: {
     flex: 1,
     height: 1,
-    backgroundColor: '#E0DFF0',
+    backgroundColor: COLORS.lightGray,
   },
 
   // Intro
   introText: {
     fontSize: 14,
-    color: '#4A4A6A',
+    color: COLORS.textSecondary,
     lineHeight: 22,
   },
 
@@ -266,7 +351,7 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 18,
     fontWeight: '800',
-    color: '#1A1A2E',
+    color: COLORS.textPrimary,
     marginTop: 8,
   },
 
@@ -301,7 +386,7 @@ const styles = StyleSheet.create({
   bulletText: {
     flex: 1,
     fontSize: 13,
-    color: '#4A4A6A',
+    color: COLORS.textSecondary,
     lineHeight: 22,
   },
 
@@ -310,31 +395,31 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     overflow: 'hidden',
     borderWidth: 1,
-    borderColor: '#E8E6F0',
+    borderColor: COLORS.lightGray,
   },
   tableRow: {
     flexDirection: 'row',
   },
   tableHeader: {
-    backgroundColor: '#F0EEF8',
+    backgroundColor: COLORS.primarySoft,
   },
   tableRowEven: {
-    backgroundColor: '#FAFAFA',
+    backgroundColor: COLORS.white,
   },
   tableRowOdd: {
-    backgroundColor: '#F5F4FC',
+    backgroundColor: COLORS.offWhite,
   },
   tableCell: {
     flex: 1,
     fontSize: 13,
-    color: '#4A4A6A',
+    color: COLORS.textSecondary,
     paddingVertical: 12,
     paddingHorizontal: 14,
     lineHeight: 19,
   },
   tableCellHeader: {
     fontWeight: '700',
-    color: '#1A1A2E',
+    color: COLORS.primary,
     fontSize: 13,
   },
 
@@ -346,7 +431,7 @@ const styles = StyleSheet.create({
   },
   rightCard: {
     width: '47%',
-    backgroundColor: '#F5F3FF',
+    backgroundColor: COLORS.primarySoft,
     borderRadius: 16,
     padding: 16,
     gap: 6,
@@ -357,35 +442,67 @@ const styles = StyleSheet.create({
   rightTitle: {
     fontSize: 14,
     fontWeight: '700',
-    color: '#1A1A2E',
+    color: COLORS.textPrimary,
   },
   rightDesc: {
     fontSize: 12,
-    color: '#7A7A9D',
+    color: COLORS.textSecondary,
     lineHeight: 18,
   },
 
   // Body text
   bodyText: {
     fontSize: 14,
-    color: '#4A4A6A',
+    color: COLORS.textSecondary,
     lineHeight: 22,
   },
   bold: {
     fontWeight: '700',
-    color: '#1A1A2E',
+    color: COLORS.textPrimary,
   },
 
   // Contact box
   contactBox: {
-    backgroundColor: '#F0EEF8',
+    backgroundColor: COLORS.secondarySoft,
     borderRadius: 16,
     padding: 16,
     gap: 10,
   },
   contactText: {
     fontSize: 13,
-    color: '#4A4A6A',
+    color: COLORS.textSecondary,
+    lineHeight: 20,
+  },
+
+  // Consent checkbox
+  consentRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
+    backgroundColor: COLORS.white,
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: COLORS.lightGray,
+  },
+  checkbox: {
+    width: 24,
+    height: 24,
+    borderRadius: 6,
+    borderWidth: 2,
+    borderColor: COLORS.lightGray,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: 2,
+  },
+  checkboxChecked: {
+    backgroundColor: COLORS.primary,
+    borderColor: COLORS.primary,
+  },
+  consentText: {
+    flex: 1,
+    fontSize: 13,
+    color: COLORS.textSecondary,
     lineHeight: 20,
   },
 
@@ -393,20 +510,59 @@ const styles = StyleSheet.create({
   stickyBottom: {
     paddingHorizontal: 24,
     paddingVertical: 16,
-    backgroundColor: '#FAFAFA',
-    borderTopWidth: 1,
-    borderTopColor: '#EFEFEF',
+    backgroundColor: 'transparent',
   },
-  understandButton: {
-    borderRadius: 50,
-    paddingVertical: 18,
+  buttonRow: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  backButton: {
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+    gap: 8,
+    backgroundColor: COLORS.white,
+    borderRadius: 50,
+    paddingVertical: 18,
+    paddingHorizontal: 24,
+    borderWidth: 2,
+    borderColor: COLORS.primary,
+    shadowColor: COLORS.cardShadow,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 6,
+    elevation: 2,
   },
-  understandText: {
-    color: '#FFFFFF',
-    fontSize: 17,
+  backButtonText: {
+    color: COLORS.primary,
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  nextButtonWrapper: {
+    flex: 1,
+    borderRadius: 50,
+    overflow: 'hidden',
+  },
+  nextButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    borderRadius: 50,
+    paddingVertical: 18,
+    shadowColor: COLORS.primary,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 6,
+  },
+  nextButtonText: {
+    color: COLORS.white,
+    fontSize: 16,
     fontWeight: '700',
     letterSpacing: 0.3,
+  },
+  nextButtonTextDisabled: {
+    color: COLORS.gray,
   },
 });

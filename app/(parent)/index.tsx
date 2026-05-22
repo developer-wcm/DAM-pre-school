@@ -1,5 +1,7 @@
 import { LinearGradient } from 'expo-linear-gradient';
+import { useRouter } from 'expo-router';
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { COLORS } from '../../constants/admissionTheme';
 
 const RECENT_ACTIVITY = [
   {
@@ -53,8 +55,10 @@ function StarRating({ rating }: { rating: number }) {
 }
 
 export default function ParentChildScreen() {
+  const router = useRouter();
+  
   return (
-    <LinearGradient colors={['#EDE9F6', '#F0EEF8', '#EAF0F8']} style={styles.container}>
+    <LinearGradient colors={[COLORS.background, COLORS.offWhite, COLORS.cream]} style={styles.container}>
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
@@ -77,21 +81,12 @@ export default function ParentChildScreen() {
 
         {/* Action buttons */}
         <View style={styles.actionRow}>
-          <TouchableOpacity activeOpacity={0.85} style={styles.actionBtnPrimary}>
-            <LinearGradient
-              colors={['#7B6FE8', '#6EC6C6']}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 0 }}
-              style={styles.actionGradient}
-            >
-              <Text style={styles.actionIconText}>📅</Text>
-              <Text style={styles.actionPrimaryText}>Book Appt.</Text>
-            </LinearGradient>
-          </TouchableOpacity>
-
-          <TouchableOpacity activeOpacity={0.85} style={styles.actionBtnSecondary}>
+          <TouchableOpacity 
+            activeOpacity={0.85} 
+            style={styles.actionBtnBlue}
+          >
             <Text style={styles.actionIconText}>📆</Text>
-            <Text style={styles.actionSecondaryText}>Calendar</Text>
+            <Text style={styles.actionPrimaryText}>Calendar</Text>
           </TouchableOpacity>
         </View>
 
@@ -194,21 +189,21 @@ const styles = StyleSheet.create({
     height: 96,
     borderRadius: 48,
     borderWidth: 3,
-    borderColor: '#FFFFFF',
+    borderColor: COLORS.white,
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: '#9B8FE0',
+    shadowColor: COLORS.primary,
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.18,
     shadowRadius: 12,
     elevation: 6,
-    backgroundColor: '#F5F3FF',
+    backgroundColor: COLORS.primarySoft,
   },
   avatarCircle: {
     width: 86,
     height: 86,
     borderRadius: 43,
-    backgroundColor: '#F5E6D8',
+    backgroundColor: COLORS.secondarySoft,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -227,7 +222,7 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   classBadge: {
-    backgroundColor: '#D4F4E8',
+    backgroundColor: COLORS.secondarySoft,
     borderRadius: 20,
     paddingHorizontal: 12,
     paddingVertical: 5,
@@ -235,7 +230,7 @@ const styles = StyleSheet.create({
   classBadgeText: {
     fontSize: 11,
     fontWeight: '700',
-    color: '#1A7A50',
+    color: COLORS.secondaryDark,
     letterSpacing: 0.5,
   },
   childId: {
@@ -249,37 +244,20 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 12,
   },
-  actionBtnPrimary: {
+  actionBtnBlue: {
     flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#0A2647',
     borderRadius: 50,
-    overflow: 'hidden',
-    shadowColor: '#7B6FE8',
+    paddingVertical: 14,
+    gap: 8,
+    shadowColor: '#0A2647',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 8,
     elevation: 5,
-  },
-  actionGradient: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 14,
-    gap: 8,
-  },
-  actionBtnSecondary: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#FFFFFF',
-    borderRadius: 50,
-    paddingVertical: 14,
-    gap: 8,
-    shadowColor: '#9B8FE0',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 3,
   },
   actionIconText: {
     fontSize: 16,
@@ -289,18 +267,13 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '700',
   },
-  actionSecondaryText: {
-    color: '#7B6FE8',
-    fontSize: 15,
-    fontWeight: '700',
-  },
 
   // Cards
   card: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: COLORS.white,
     borderRadius: 20,
     padding: 18,
-    shadowColor: '#9B8FE0',
+    shadowColor: COLORS.primary,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.08,
     shadowRadius: 12,
@@ -354,8 +327,8 @@ const styles = StyleSheet.create({
     height: 72,
     borderRadius: 36,
     borderWidth: 6,
-    borderColor: '#3ABFBF',
-    borderTopColor: '#E0F7F7',
+    borderColor: COLORS.secondary,
+    borderTopColor: COLORS.secondarySoft,
     justifyContent: 'center',
     alignItems: 'center',
     transform: [{ rotate: '-45deg' }],
@@ -396,7 +369,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   outstandingBadge: {
-    backgroundColor: '#FFF0D4',
+    backgroundColor: COLORS.warningLight,
     borderRadius: 8,
     paddingHorizontal: 8,
     paddingVertical: 3,
@@ -404,7 +377,7 @@ const styles = StyleSheet.create({
   outstandingText: {
     fontSize: 10,
     fontWeight: '700',
-    color: '#E07A00',
+    color: COLORS.warningDark,
     letterSpacing: 0.5,
   },
   feeAmount: {
@@ -456,7 +429,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
   },
   starFilled: {
-    color: '#F5A623',
+    color: COLORS.secondary,
   },
   starEmpty: {
     color: '#D0D0E0',
@@ -489,11 +462,11 @@ const styles = StyleSheet.create({
   activityItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#FFFFFF',
+    backgroundColor: COLORS.white,
     borderRadius: 16,
     padding: 14,
     gap: 12,
-    shadowColor: '#9B8FE0',
+    shadowColor: COLORS.primary,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.06,
     shadowRadius: 8,

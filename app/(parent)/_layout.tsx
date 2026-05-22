@@ -16,8 +16,8 @@ export default function ParentLayout() {
       <Tabs.Screen
         name="index"
         options={{
-          title: 'My Child',
-          tabBarIcon: ({ color, size }) => <Ionicons name="heart" size={size} color={color} />,
+          title: 'Child',
+          tabBarIcon: ({ color, size }) => <Ionicons name="person-outline" size={size} color={color} />,
         }}
       />
       <Tabs.Screen

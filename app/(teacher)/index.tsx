@@ -1,4 +1,8 @@
+import { COLORS } from '@/constants/admissionTheme';
+import { Ionicons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { LinearGradient } from 'expo-linear-gradient';
+import { useEffect, useState } from 'react';
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 type Student = {
@@ -30,10 +34,34 @@ function CircularProgress({ percent }: { percent: number }) {
 }
 
 export default function TeacherClassScreen() {
+  const [className, setClassName] = useState('My Class');
+  const [classId, setClassId] = useState('');
   const presentCount = STUDENTS.filter((s) => s.present).length;
 
+  useEffect(() => {
+    // Load the selected class from AsyncStorage
+    const loadClassInfo = async () => {
+      try {
+        const savedClassName = await AsyncStorage.getItem('className');
+        const savedClassId = await AsyncStorage.getItem('classId');
+        
+        if (savedClassName) {
+          setClassName(savedClassName);
+        }
+        if (savedClassId) {
+          setClassId(savedClassId);
+        }
+      } catch (error) {
+        console.log('Error loading class info:', error);
+        // Keep default values if loading fails
+      }
+    };
+
+    loadClassInfo();
+  }, []);
+
   return (
-    <LinearGradient colors={['#EDE9F6', '#F0EEF8', '#EAF0F8']} style={styles.container}>
+    <LinearGradient colors={COLORS.backgroundGradient} style={styles.container}>
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
@@ -41,18 +69,18 @@ export default function TeacherClassScreen() {
         {/* Header */}
         <View style={styles.header}>
           <View>
-            <Text style={styles.headerTitle}>My Class: Junior KG</Text>
-            <Text style={styles.headerSub}>{STUDENTS.length} students</Text>
+            <Text style={styles.headerTitle}>My Class: {className}</Text>
+            <Text style={styles.headerSub}>{STUDENTS.length} students {classId && `• ID: ${classId}`}</Text>
           </View>
           <TouchableOpacity style={styles.bellBtn} activeOpacity={0.8}>
-            <Text style={styles.bellEmoji}>🔔</Text>
+            <Ionicons name="notifications" size={22} color={COLORS.secondary} />
             <View style={styles.bellDot} />
           </TouchableOpacity>
         </View>
 
         {/* Notice banner */}
         <View style={styles.noticeBanner}>
-          <Text style={styles.noticeIcon}>📢</Text>
+          <Ionicons name="megaphone" size={20} color={COLORS.primary} />
           <Text style={styles.noticeText}>
             School closed on Feb 19 for Shivaji Jayanti
           </Text>
@@ -65,7 +93,7 @@ export default function TeacherClassScreen() {
             <View style={styles.statCardHeader}>
               <Text style={styles.statCardLabel}>Attendance</Text>
               <View style={styles.checkCircle}>
-                <Text style={styles.checkMark}>✓</Text>
+                <Ionicons name="checkmark" size={16} color={COLORS.success} />
               </View>
             </View>
             <View style={styles.attendanceContent}>
@@ -82,7 +110,7 @@ export default function TeacherClassScreen() {
           <View style={styles.statCard}>
             <View style={styles.statCardHeader}>
               <Text style={styles.statCardLabel}>Assessments</Text>
-              <Text style={styles.assessmentIcon}>📋</Text>
+              <Ionicons name="clipboard" size={20} color={COLORS.secondary} />
             </View>
             <Text style={styles.pendingCount}>3</Text>
             <Text style={styles.pendingLabel}>Pending Review</Text>
@@ -115,7 +143,7 @@ export default function TeacherClassScreen() {
                   <Text
                     style={[
                       styles.studentStatus,
-                      { color: student.present ? '#3AAF72' : '#E05A5A' },
+                      { color: student.present ? COLORS.success : COLORS.error },
                     ]}
                   >
                     {student.present ? 'Present' : 'Absent'}
@@ -127,22 +155,19 @@ export default function TeacherClassScreen() {
                   <TouchableOpacity
                     style={[
                       styles.actionCircle,
-                      { backgroundColor: student.present ? '#D4F4E8' : '#F0F0F8' },
+                      { backgroundColor: student.present ? COLORS.successLight : COLORS.offWhite },
                     ]}
                     activeOpacity={0.8}
                   >
-                    <Text
-                      style={[
-                        styles.actionCheck,
-                        { color: student.present ? '#3AAF72' : '#C0C0D0' },
-                      ]}
-                    >
-                      ✓
-                    </Text>
+                    <Ionicons 
+                      name="checkmark" 
+                      size={18} 
+                      color={student.present ? COLORS.success : COLORS.gray} 
+                    />
                   </TouchableOpacity>
 
                   <TouchableOpacity style={styles.actionSquare} activeOpacity={0.8}>
-                    <Text style={styles.actionChart}>📊</Text>
+                    <Ionicons name="stats-chart" size={18} color={COLORS.primary} />
                   </TouchableOpacity>
                 </View>
               </View>
@@ -176,30 +201,27 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontSize: 22,
     fontWeight: '800',
-    color: '#1A1A2E',
+    color: COLORS.textPrimary,
     letterSpacing: -0.3,
   },
   headerSub: {
     fontSize: 13,
-    color: '#7A7A9D',
+    color: COLORS.textSecondary,
     marginTop: 2,
   },
   bellBtn: {
     width: 44,
     height: 44,
     borderRadius: 22,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: COLORS.white,
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: '#9B8FE0',
+    shadowColor: COLORS.primary,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.1,
     shadowRadius: 8,
     elevation: 3,
     position: 'relative',
-  },
-  bellEmoji: {
-    fontSize: 20,
   },
   bellDot: {
     position: 'absolute',
@@ -208,29 +230,27 @@ const styles = StyleSheet.create({
     width: 9,
     height: 9,
     borderRadius: 5,
-    backgroundColor: '#E05A5A',
+    backgroundColor: COLORS.error,
     borderWidth: 1.5,
-    borderColor: '#FFFFFF',
+    borderColor: COLORS.white,
   },
 
   // Notice banner
   noticeBanner: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    backgroundColor: '#D4F4F4',
+    backgroundColor: COLORS.secondarySoft,
     borderRadius: 16,
     padding: 14,
     gap: 10,
-  },
-  noticeIcon: {
-    fontSize: 18,
-    marginTop: 1,
+    borderWidth: 1,
+    borderColor: COLORS.secondary + '20',
   },
   noticeText: {
     flex: 1,
     fontSize: 13,
     fontWeight: '600',
-    color: '#1A6A6A',
+    color: COLORS.primary,
     lineHeight: 20,
   },
 
@@ -241,11 +261,11 @@ const styles = StyleSheet.create({
   },
   statCard: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: COLORS.white,
     borderRadius: 20,
     padding: 16,
     gap: 10,
-    shadowColor: '#9B8FE0',
+    shadowColor: COLORS.primary,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.08,
     shadowRadius: 12,
@@ -259,23 +279,15 @@ const styles = StyleSheet.create({
   statCardLabel: {
     fontSize: 13,
     fontWeight: '600',
-    color: '#7A7A9D',
+    color: COLORS.textSecondary,
   },
   checkCircle: {
     width: 26,
     height: 26,
     borderRadius: 13,
-    backgroundColor: '#D4F4E8',
+    backgroundColor: COLORS.successLight,
     justifyContent: 'center',
     alignItems: 'center',
-  },
-  checkMark: {
-    fontSize: 14,
-    color: '#3AAF72',
-    fontWeight: '700',
-  },
-  assessmentIcon: {
-    fontSize: 18,
   },
 
   // Attendance
@@ -289,8 +301,8 @@ const styles = StyleSheet.create({
     height: 56,
     borderRadius: 28,
     borderWidth: 5,
-    borderColor: '#3ABFBF',
-    borderTopColor: '#E0F7F7',
+    borderColor: COLORS.secondary,
+    borderTopColor: COLORS.secondarySoft,
     justifyContent: 'center',
     alignItems: 'center',
     transform: [{ rotate: '-45deg' }],
@@ -301,7 +313,7 @@ const styles = StyleSheet.create({
   circleText: {
     fontSize: 11,
     fontWeight: '800',
-    color: '#1A1A2E',
+    color: COLORS.textPrimary,
   },
   attendanceNumbers: {
     gap: 1,
@@ -309,13 +321,13 @@ const styles = StyleSheet.create({
   attendanceBig: {
     fontSize: 28,
     fontWeight: '800',
-    color: '#1A1A2E',
+    color: COLORS.textPrimary,
     lineHeight: 32,
   },
   attendanceSmall: {
     fontSize: 10,
     fontWeight: '600',
-    color: '#9A9AB0',
+    color: COLORS.textSecondary,
     letterSpacing: 0.5,
   },
 
@@ -323,12 +335,12 @@ const styles = StyleSheet.create({
   pendingCount: {
     fontSize: 36,
     fontWeight: '800',
-    color: '#E05A5A',
+    color: COLORS.secondary,
   },
   pendingLabel: {
     fontSize: 12,
     fontWeight: '600',
-    color: '#E05A5A',
+    color: COLORS.secondary,
   },
 
   // Section
@@ -343,12 +355,12 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 20,
     fontWeight: '800',
-    color: '#1A1A2E',
+    color: COLORS.textPrimary,
   },
   viewAllLink: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#7B6FE8',
+    color: COLORS.primary,
   },
 
   // Student list
@@ -358,11 +370,11 @@ const styles = StyleSheet.create({
   studentRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#FFFFFF',
+    backgroundColor: COLORS.white,
     borderRadius: 18,
     padding: 14,
     gap: 12,
-    shadowColor: '#9B8FE0',
+    shadowColor: COLORS.primary,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.06,
     shadowRadius: 8,
@@ -391,7 +403,7 @@ const styles = StyleSheet.create({
     height: 11,
     borderRadius: 6,
     borderWidth: 2,
-    borderColor: '#FFFFFF',
+    borderColor: COLORS.white,
   },
 
   // Student info
@@ -402,7 +414,7 @@ const styles = StyleSheet.create({
   studentName: {
     fontSize: 15,
     fontWeight: '700',
-    color: '#1A1A2E',
+    color: COLORS.textPrimary,
   },
   studentStatus: {
     fontSize: 12,
@@ -422,19 +434,12 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  actionCheck: {
-    fontSize: 16,
-    fontWeight: '700',
-  },
   actionSquare: {
     width: 36,
     height: 36,
     borderRadius: 10,
-    backgroundColor: '#E8E4F8',
+    backgroundColor: COLORS.primarySoft,
     justifyContent: 'center',
     alignItems: 'center',
-  },
-  actionChart: {
-    fontSize: 16,
   },
 });

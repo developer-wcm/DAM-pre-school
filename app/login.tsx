@@ -1,4 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
+import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
@@ -7,12 +8,15 @@ import {
     Alert,
     KeyboardAvoidingView,
     Platform,
+    ScrollView,
     StyleSheet,
     Text,
     TextInput,
     TouchableOpacity,
     View,
 } from 'react-native';
+import { COLORS } from '../constants/admissionTheme';
+import { IMAGES } from '../constants/images';
 import { useAuth } from '../context/auth';
 
 export default function LoginScreen() {
@@ -30,29 +34,49 @@ export default function LoginScreen() {
       Alert.alert('Missing fields', 'Please enter your email and password.');
       return;
     }
+    
     setLoading(true);
-    const { error } = await signInWithEmail(email.trim(), password);
+    const { error } = await signInWithEmail(email, password);
     setLoading(false);
-    if (error) Alert.alert('Login failed', error);
+    
+    if (error) {
+      Alert.alert('Login Failed', error);
+    }
+    // Navigation is handled by auth context based on role
   }
 
   async function handleGoogleLogin() {
     setGoogleLoading(true);
     const { error } = await signInWithGoogle();
     setGoogleLoading(false);
-    if (error) Alert.alert('Google sign-in failed', error);
+    
+    if (error) {
+      Alert.alert('Google Sign-In Failed', error);
+    }
+    // Navigation is handled by auth context based on role
   }
 
   return (
-    <LinearGradient colors={['#EDE9F6', '#F0EEF8', '#EAF0F8']} style={styles.container}>
+    <LinearGradient colors={COLORS.backgroundGradient} style={styles.container}>
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={styles.keyboardView}
       >
+        <ScrollView
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+        >
         {/* Top */}
         <View style={styles.topContent}>
           <View style={styles.logoBadge}>
-            <Ionicons name="school" size={26} color="#7B6FE8" />
+            <Image 
+              source={IMAGES.schoolLogo}
+              style={styles.schoolLogo}
+              contentFit="contain"
+              transition={300}
+              cachePolicy="memory-disk"
+            />
           </View>
           <Text style={styles.title}>Welcome Back</Text>
           <Text style={styles.subtitle}>
@@ -63,11 +87,11 @@ export default function LoginScreen() {
         {/* Inputs */}
         <View style={styles.inputsSection}>
           <View style={styles.inputRow}>
-            <Ionicons name="mail-outline" size={18} color="#9A9AB0" style={styles.inputIcon} />
+            <Ionicons name="mail-outline" size={18} color={COLORS.gray} style={styles.inputIcon} />
             <TextInput
               style={styles.input}
               placeholder="Email address"
-              placeholderTextColor="#ABABC4"
+              placeholderTextColor={COLORS.gray}
               value={email}
               onChangeText={setEmail}
               keyboardType="email-address"
@@ -78,11 +102,11 @@ export default function LoginScreen() {
           </View>
 
           <View style={styles.inputRow}>
-            <Ionicons name="lock-closed-outline" size={18} color="#9A9AB0" style={styles.inputIcon} />
+            <Ionicons name="lock-closed-outline" size={18} color={COLORS.gray} style={styles.inputIcon} />
             <TextInput
               style={styles.input}
               placeholder="Password"
-              placeholderTextColor="#ABABC4"
+              placeholderTextColor={COLORS.gray}
               value={password}
               onChangeText={setPassword}
               secureTextEntry={!showPassword}
@@ -94,7 +118,7 @@ export default function LoginScreen() {
               <Ionicons
                 name={showPassword ? 'eye-outline' : 'eye-off-outline'}
                 size={18}
-                color="#9A9AB0"
+                color={COLORS.gray}
               />
             </TouchableOpacity>
           </View>
@@ -113,17 +137,17 @@ export default function LoginScreen() {
             style={styles.logInButtonWrapper}
           >
             <LinearGradient
-              colors={['#7B6FE8', '#6EC6C6']}
+              colors={[COLORS.primary, COLORS.primaryLight]}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 0 }}
               style={styles.logInButton}
             >
               {loading ? (
-                <ActivityIndicator color="#fff" />
+                <ActivityIndicator color={COLORS.white} />
               ) : (
                 <>
                   <Text style={styles.logInText}>Log In</Text>
-                  <Ionicons name="arrow-forward" size={18} color="#fff" />
+                  <Ionicons name="arrow-forward" size={18} color={COLORS.white} />
                 </>
               )}
             </LinearGradient>
@@ -142,7 +166,7 @@ export default function LoginScreen() {
             disabled={googleLoading}
           >
             {googleLoading ? (
-              <ActivityIndicator color="#5A5A7A" />
+              <ActivityIndicator color={COLORS.textSecondary} />
             ) : (
               <>
                 <View style={styles.googleIconBox}>
@@ -152,14 +176,8 @@ export default function LoginScreen() {
               </>
             )}
           </TouchableOpacity>
-
-          <Text style={styles.signUpText}>
-            {"Don't have an account? "}
-            <Text style={styles.signUpLink} onPress={() => router.push('/role-selection')}>
-              Sign Up
-            </Text>
-          </Text>
         </View>
+        </ScrollView>
       </KeyboardAvoidingView>
     </LinearGradient>
   );
@@ -167,31 +185,40 @@ export default function LoginScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  keyboardView: {
-    flex: 1, paddingHorizontal: 28,
-    paddingTop: 72, paddingBottom: 44,
-    justifyContent: 'space-between',
+  keyboardView: { flex: 1 },
+  scrollContent: {
+    paddingHorizontal: 28,
+    paddingTop: 72,
+    paddingBottom: 44,
+    gap: 32,
   },
   topContent: { gap: 14 },
   logoBadge: {
     width: 56, height: 56, borderRadius: 18,
-    backgroundColor: '#E8E4F8',
+    backgroundColor: COLORS.white,
     justifyContent: 'center', alignItems: 'center', marginBottom: 4,
+    shadowColor: COLORS.cardShadow, shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.12, shadowRadius: 8, elevation: 4,
+    padding: 6,
   },
-  title: { fontSize: 32, fontWeight: '800', color: '#1A1A2E', letterSpacing: -0.5 },
-  subtitle: { fontSize: 15, color: '#7A7A9D', lineHeight: 23 },
+  schoolLogo: {
+    width: '100%',
+    height: '100%',
+  },
+  title: { fontSize: 32, fontWeight: '800', color: COLORS.textPrimary, letterSpacing: -0.5 },
+  subtitle: { fontSize: 15, color: COLORS.textSecondary, lineHeight: 23 },
 
   inputsSection: { gap: 14 },
   inputRow: {
     flexDirection: 'row', alignItems: 'center',
-    backgroundColor: '#F4F3FA', borderRadius: 16,
+    backgroundColor: COLORS.offWhite, borderRadius: 16,
     paddingHorizontal: 16, paddingVertical: 16, gap: 12,
   },
   inputIcon: { width: 20 },
-  input: { flex: 1, fontSize: 15, color: '#1A1A2E' },
+  input: { flex: 1, fontSize: 15, color: COLORS.textPrimary },
   eyeBtn: { padding: 2 },
   forgotBtn: { alignSelf: 'flex-end' },
-  forgotText: { fontSize: 13, color: '#7B6FE8', fontWeight: '600' },
+  forgotText: { fontSize: 13, color: COLORS.secondary, fontWeight: '600' },
 
   bottomContent: { gap: 16, alignItems: 'center' },
   logInButtonWrapper: { width: '100%', borderRadius: 50, overflow: 'hidden' },
@@ -199,27 +226,24 @@ const styles = StyleSheet.create({
     width: '100%', borderRadius: 50, paddingVertical: 18,
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
   },
-  logInText: { color: '#FFFFFF', fontSize: 17, fontWeight: '700', letterSpacing: 0.3 },
+  logInText: { color: COLORS.white, fontSize: 17, fontWeight: '700', letterSpacing: 0.3 },
 
   divider: { flexDirection: 'row', alignItems: 'center', gap: 12, width: '100%' },
-  dividerLine: { flex: 1, height: 1, backgroundColor: '#E0DFF0' },
-  dividerText: { fontSize: 13, color: '#9A9AB0' },
+  dividerLine: { flex: 1, height: 1, backgroundColor: COLORS.lightGray },
+  dividerText: { fontSize: 13, color: COLORS.gray },
 
   googleButton: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    backgroundColor: '#FFFFFF', borderRadius: 50, paddingVertical: 16,
+    backgroundColor: COLORS.white, borderRadius: 50, paddingVertical: 16,
     width: '100%', gap: 12,
-    shadowColor: '#9B8FE0', shadowOffset: { width: 0, height: 4 },
+    shadowColor: COLORS.cardShadow, shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.08, shadowRadius: 10, elevation: 3,
   },
   googleIconBox: {
     width: 24, height: 24, borderRadius: 12,
-    backgroundColor: '#F0F0F0',
+    backgroundColor: COLORS.offWhite,
     justifyContent: 'center', alignItems: 'center',
   },
   googleLetter: { fontSize: 13, fontWeight: '800', color: '#4285F4' },
-  googleText: { fontSize: 15, fontWeight: '600', color: '#3A3A5A' },
-
-  signUpText: { fontSize: 14, color: '#5A5A7A' },
-  signUpLink: { color: '#7B6FE8', fontWeight: '700' },
+  googleText: { fontSize: 15, fontWeight: '600', color: COLORS.textSecondary },
 });

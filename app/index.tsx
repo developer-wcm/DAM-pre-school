@@ -1,108 +1,224 @@
-import { Ionicons } from '@expo/vector-icons';
+import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { COLORS } from '../constants/admissionTheme';
+import { IMAGES } from '../constants/images';
 
 export default function WelcomeScreen() {
   const router = useRouter();
 
   return (
-    <LinearGradient colors={['#EDE9F6', '#F0EEF8', '#EAF0F8']} style={styles.container}>
-      {/* Decorative background shapes */}
-      <View style={[styles.blob, styles.blobTopLeft]} />
-      <View style={[styles.blob, styles.blobBottomRight]} />
-      <View style={styles.triangle} />
-      <View style={styles.star} />
-      <View style={[styles.dot, styles.dotGreen]} />
-      <View style={[styles.dot, styles.dotPurple]} />
+    <View style={styles.container}>
+      {/* Background decorative elements */}
+      <View style={[styles.decorativeCircle, styles.topLeftCircle]} />
+      <View style={[styles.decorativeCircle, styles.topRightDots]} />
+      <View style={[styles.decorativeCircle, styles.bottomRightCircle]} />
+      <View style={[styles.decorativeShape, styles.triangleShape]} />
+      <View style={[styles.decorativeShape, styles.squareShape]} />
+      <View style={[styles.decorativeCircle, styles.midLeftCircle]} />
+      <View style={[styles.decorativeCircle, styles.smallDot1]} />
+      <View style={[styles.decorativeCircle, styles.smallDot2]} />
+      <View style={[styles.decorativeShape, styles.hexagonShape]} />
 
-      {/* Center content */}
-      <View style={styles.centerContent}>
-        <View style={styles.iconContainer}>
-          <Ionicons name="school" size={44} color="#7B6FE8" />
+      {/* Main content */}
+      <View style={styles.content}>
+        {/* Logo container */}
+        <View style={styles.logoContainer}>
+          <Image 
+            source={IMAGES.schoolLogo}
+            style={styles.schoolLogo}
+            contentFit="contain"
+            transition={300}
+            cachePolicy="memory-disk"
+          />
         </View>
-        <Text style={styles.title}>DMA PreSchool</Text>
-        <Text style={styles.subtitle}>Managing little learners, effortlessly</Text>
+
+        {/* School name */}
+        <Text style={styles.schoolName}>David & Mary Academy</Text>
+        
+        {/* Tagline */}
+        <Text style={styles.tagline}>Managing little learners, effortlessly</Text>
       </View>
 
-      {/* Bottom actions */}
-      <View style={styles.bottomContent}>
+      {/* Bottom section */}
+      <View style={styles.bottomSection}>
         <TouchableOpacity
           style={styles.getStartedButton}
           onPress={() => router.push('/role-selection')}
           activeOpacity={0.85}
         >
           <LinearGradient
-            colors={['#7B6FE8', '#6EC6C6']}
+            colors={[COLORS.primary, COLORS.primaryLight]}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 0 }}
             style={styles.gradientButton}
           >
-            <Text style={styles.getStartedText}>Get Started</Text>
-            <Ionicons name="arrow-forward" size={18} color="#fff" />
+            <Text style={styles.getStartedText}>Get Started →</Text>
           </LinearGradient>
         </TouchableOpacity>
-
-        <Text style={styles.loginText}>
-          Already have an account?{' '}
-          <Text style={styles.loginLink} onPress={() => router.push('/login')}>
-            Log in
-          </Text>
-        </Text>
       </View>
-    </LinearGradient>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    justifyContent: 'space-between',
-    paddingVertical: 60,
+    backgroundColor: COLORS.background,
     paddingHorizontal: 24,
-    overflow: 'hidden',
+    paddingVertical: 60,
   },
-  blob: { position: 'absolute', borderRadius: 999, opacity: 0.35 },
-  blobTopLeft: { width: 110, height: 110, backgroundColor: '#C4B5F4', top: 60, left: -40 },
-  blobBottomRight: { width: 80, height: 80, backgroundColor: '#A8D8EA', bottom: 160, right: -20 },
-  triangle: {
-    position: 'absolute', top: 180, right: 60,
-    width: 0, height: 0,
-    borderLeftWidth: 30, borderRightWidth: 30, borderBottomWidth: 52,
-    borderLeftColor: 'transparent', borderRightColor: 'transparent',
-    borderBottomColor: '#B8E0D4', opacity: 0.5,
+  
+  // Enhanced decorative elements
+  decorativeCircle: {
+    position: 'absolute',
+    borderRadius: 999,
+    opacity: 0.15,
   },
-  star: {
-    position: 'absolute', bottom: 260, left: 50,
-    width: 40, height: 40, backgroundColor: '#F4C2A1',
-    opacity: 0.4, transform: [{ rotate: '20deg' }], borderRadius: 4,
+  decorativeShape: {
+    position: 'absolute',
+    opacity: 0.12,
   },
-  dot: { position: 'absolute', width: 12, height: 12, borderRadius: 6 },
-  dotGreen: { backgroundColor: '#7DD4B0', top: 52, right: 70 },
-  dotPurple: { backgroundColor: '#A89BE8', top: 52, right: 90 },
+  topLeftCircle: {
+    width: 120,
+    height: 120,
+    backgroundColor: COLORS.secondary,
+    top: 60,
+    left: -40,
+  },
+  topRightDots: {
+    width: 12,
+    height: 12,
+    backgroundColor: COLORS.primary,
+    top: 80,
+    right: 60,
+  },
+  bottomRightCircle: {
+    width: 80,
+    height: 80,
+    backgroundColor: COLORS.secondaryLight,
+    bottom: 180,
+    right: -25,
+  },
+  midLeftCircle: {
+    width: 60,
+    height: 60,
+    backgroundColor: COLORS.primaryLight,
+    top: '45%',
+    left: -20,
+  },
+  smallDot1: {
+    width: 8,
+    height: 8,
+    backgroundColor: COLORS.secondary,
+    top: 120,
+    right: 100,
+  },
+  smallDot2: {
+    width: 6,
+    height: 6,
+    backgroundColor: COLORS.primary,
+    bottom: 250,
+    left: 80,
+  },
+  triangleShape: {
+    width: 0,
+    height: 0,
+    backgroundColor: 'transparent',
+    borderStyle: 'solid',
+    borderLeftWidth: 20,
+    borderRightWidth: 20,
+    borderBottomWidth: 35,
+    borderLeftColor: 'transparent',
+    borderRightColor: 'transparent',
+    borderBottomColor: COLORS.secondarySoft,
+    top: 200,
+    right: 40,
+    transform: [{ rotate: '15deg' }],
+  },
+  squareShape: {
+    width: 30,
+    height: 30,
+    backgroundColor: COLORS.primarySoft,
+    borderRadius: 6,
+    bottom: 300,
+    left: 50,
+    transform: [{ rotate: '25deg' }],
+  },
+  hexagonShape: {
+    width: 40,
+    height: 40,
+    backgroundColor: COLORS.secondarySoft,
+    borderRadius: 8,
+    top: '35%',
+    right: 30,
+    transform: [{ rotate: '45deg' }],
+  },
 
-  centerContent: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 16 },
-  iconContainer: {
-    width: 90, height: 90, borderRadius: 28,
-    backgroundColor: '#FFFFFF',
-    justifyContent: 'center', alignItems: 'center',
-    shadowColor: '#9B8FE0', shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.15, shadowRadius: 16, elevation: 6, marginBottom: 8,
+  content: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingTop: 40,
   },
-  title: { fontSize: 30, fontWeight: '800', color: '#1A1A2E', letterSpacing: -0.5 },
-  subtitle: { fontSize: 16, color: '#7A7A9D', textAlign: 'center', lineHeight: 22 },
+  logoContainer: {
+    width: 160,
+    height: 160,
+    backgroundColor: COLORS.white,
+    borderRadius: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 40,
+    shadowColor: COLORS.cardShadow,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.15,
+    shadowRadius: 20,
+    elevation: 8,
+    padding: 20,
+  },
+  schoolLogo: {
+    width: '100%',
+    height: '100%',
+  },
+  schoolName: {
+    fontSize: 32,
+    fontWeight: 'bold',
+    color: COLORS.primary,
+    textAlign: 'center',
+    marginBottom: 12,
+    letterSpacing: -0.5,
+  },
+  tagline: {
+    fontSize: 16,
+    color: COLORS.textSecondary,
+    textAlign: 'center',
+    fontWeight: '400',
+  },
 
-  bottomContent: { gap: 20, alignItems: 'center' },
+  bottomSection: {
+    paddingBottom: 40,
+    alignItems: 'center',
+  },
   getStartedButton: {
-    width: '100%', borderRadius: 50, overflow: 'hidden',
-    shadowColor: '#7B6FE8', shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.35, shadowRadius: 12, elevation: 8,
+    width: '100%',
+    borderRadius: 50,
+    shadowColor: COLORS.cardShadow,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 12,
+    elevation: 6,
   },
   gradientButton: {
-    paddingVertical: 18, flexDirection: 'row',
-    alignItems: 'center', justifyContent: 'center', gap: 8,
+    paddingVertical: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 50,
   },
-  getStartedText: { color: '#FFFFFF', fontSize: 17, fontWeight: '700', letterSpacing: 0.3 },
-  loginText: { fontSize: 14, color: '#5A5A7A' },
-  loginLink: { color: '#7B6FE8', fontWeight: '600' },
+  getStartedText: {
+    color: COLORS.white,
+    fontSize: 18,
+    fontWeight: '700',
+    letterSpacing: 0.3,
+  },
 });

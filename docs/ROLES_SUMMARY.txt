@@ -1,0 +1,159 @@
+═══════════════════════════════════════════════════════════════
+    ADMIN vs PRINCIPAL - QUICK REFERENCE GUIDE
+═══════════════════════════════════════════════════════════════
+
+TWO DIFFERENT PEOPLE | TWO DIFFERENT ROLES | TWO DIFFERENT DASHBOARDS
+
+───────────────────────────────────────────────────────────────
+👨‍💼 ADMIN (Administrative Officer)
+───────────────────────────────────────────────────────────────
+Person: Mr. Sharma
+Email: admin@dampreschool.com
+Focus: OPERATIONS & SYSTEM MANAGEMENT
+
+WHAT ADMIN CAN DO:
+✅ Approve/Reject new users (parents, teachers)
+✅ Manage all user accounts
+✅ Change school settings
+✅ Add/Delete holidays
+✅ Manage fee collection
+✅ Post announcements
+✅ View all reports
+✅ System configuration
+
+WHAT ADMIN CANNOT DO:
+❌ Manage teacher assignments
+❌ Review teacher performance
+❌ Make academic decisions
+❌ Assign classes to teachers
+
+DASHBOARD TABS:
+1. Dashboard - Overview & Quick Actions
+2. Users - Approve/Reject users ⭐ (Admin-specific)
+3. Announcements - Post to parents
+4. Reports - View analytics
+5. Settings - School info & holidays ⭐ (Admin-specific)
+
+───────────────────────────────────────────────────────────────
+👨‍🎓 PRINCIPAL (School Head)
+───────────────────────────────────────────────────────────────
+Person: Dr. Rajesh Kumar
+Email: principal@dampreschool.com
+Focus: ACADEMICS & STAFF LEADERSHIP
+
+WHAT PRINCIPAL CAN DO:
+✅ Manage all staff members
+✅ Monitor teacher attendance
+✅ Review teacher performance
+✅ Assign classes to teachers
+✅ Monitor class performance
+✅ Post announcements
+✅ View all reports
+✅ Make academic decisions
+
+WHAT PRINCIPAL CANNOT DO:
+❌ Approve/Reject new users
+❌ Change school settings
+❌ Add/Delete holidays
+❌ Manage fee collection
+❌ System configuration
+
+DASHBOARD TABS:
+1. Dashboard - Overview & Class Monitoring
+2. Staff - Manage teachers ⭐ (Principal-specific)
+3. Announcements - Post to parents
+4. Reports - View analytics
+5. Profile - Personal settings ⭐ (Principal-specific)
+
+───────────────────────────────────────────────────────────────
+🤝 WHAT BOTH CAN DO
+───────────────────────────────────────────────────────────────
+✅ Post announcements to parents
+✅ View reports and analytics
+✅ Communicate with parents
+✅ Login without 6-digit code
+✅ Manage their own profile
+
+───────────────────────────────────────────────────────────────
+📊 QUICK COMPARISON
+───────────────────────────────────────────────────────────────
+
+FEATURE                  ADMIN    PRINCIPAL
+─────────────────────────────────────────
+Approve Users             ✅         ❌
+Manage Staff              ❌         ✅
+Post Announcements        ✅         ✅
+View Reports              ✅         ✅
+Change Settings           ✅         ❌
+Add Holidays              ✅         ❌
+Monitor Classes           ⚠️         ✅
+Manage Fees               ✅         ⚠️
+
+Legend: ✅ Yes | ❌ No | ⚠️ View Only
+
+───────────────────────────────────────────────────────────────
+🎯 REAL-WORLD EXAMPLES
+───────────────────────────────────────────────────────────────
+
+NEW PARENT SIGNS UP:
+→ ADMIN approves the account
+→ Principal does NOT handle this
+
+TEACHER NEEDS LEAVE:
+→ PRINCIPAL manages staff leave
+→ Admin does NOT handle this
+
+SCHOOL HOLIDAY DECLARED:
+→ ADMIN adds to calendar
+→ Principal does NOT add holidays
+
+ANNOUNCEMENT NEEDED:
+→ BOTH can post announcements
+→ Admin: Administrative matters
+→ Principal: Academic matters
+
+───────────────────────────────────────────────────────────────
+💼 TYPICAL RESPONSIBILITIES
+───────────────────────────────────────────────────────────────
+
+ADMIN HANDLES:
+• User account approvals
+• System settings
+• Holiday calendar
+• Fee collection
+• Administrative announcements
+• System reports
+
+PRINCIPAL HANDLES:
+• Teacher management
+• Class monitoring
+• Academic decisions
+• Staff performance
+• Academic announcements
+• Educational quality
+
+───────────────────────────────────────────────────────────────
+🔑 KEY TAKEAWAY
+───────────────────────────────────────────────────────────────
+
+Admin = Office Manager (Runs the office)
+Principal = School Leader (Runs the school)
+
+Both are DIFFERENT PEOPLE with DIFFERENT JOBS
+They work TOGETHER but have SEPARATE responsibilities
+
+───────────────────────────────────────────────────────────────
+📱 DEMO ACCOUNTS
+───────────────────────────────────────────────────────────────
+
+Admin:
+Email: admin@dampreschool.com
+Password: admin123
+Code: Not required
+
+Principal:
+Email: principal@dampreschool.com
+Password: principal123
+Code: Not required
+
+═══════════════════════════════════════════════════════════════

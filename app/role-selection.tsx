@@ -1,8 +1,11 @@
 import { Ionicons } from '@expo/vector-icons';
+import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Alert, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { COLORS } from '../constants/admissionTheme';
+import { IMAGES } from '../constants/images';
 
 type Role = 'teacher' | 'parent' | null;
 
@@ -11,86 +14,136 @@ export default function RoleSelectionScreen() {
   const [selectedRole, setSelectedRole] = useState<Role>(null);
 
   return (
-    <LinearGradient colors={['#EDE9F6', '#F0EEF8', '#F8EEF0']} style={styles.container}>
-      {/* Header */}
+    <LinearGradient colors={COLORS.backgroundGradient} style={styles.container}>
+      {/* Header Section */}
       <View style={styles.header}>
-        <View style={styles.logoIcon}>
-          <Ionicons name="school" size={26} color="#7B6FE8" />
+        {/* School Logo with decorative ring */}
+        <View style={styles.logoWrapper}>
+          <View style={styles.logoRing} />
+          <View style={styles.logoContainer}>
+            <Image 
+              source={IMAGES.schoolLogo}
+              style={styles.schoolLogo}
+              contentFit="contain"
+              transition={300}
+              cachePolicy="memory-disk"
+            />
+          </View>
         </View>
-        <Text style={styles.title}>Join Our{'\n'}Community</Text>
-        <Text style={styles.subtitle}>
-          Tell us who you are so we can tailor your experience perfectly for you.
-        </Text>
+        
+        <View style={styles.headerTextContainer}>
+          <Text style={styles.schoolName}>David & Mary Academy</Text>
+          <View style={styles.divider} />
+          <Text style={styles.title}>Join Our Community</Text>
+          <Text style={styles.subtitle}>
+            Select your role to get started with a personalized experience
+          </Text>
+        </View>
       </View>
 
-      {/* Role cards */}
+      {/* Role Selection Cards */}
       <View style={styles.cardsContainer}>
+        {/* Teacher/Staff Card */}
         <TouchableOpacity
           style={[styles.card, selectedRole === 'teacher' && styles.cardSelected]}
           onPress={() => setSelectedRole('teacher')}
           activeOpacity={0.85}
         >
-          <View style={[styles.roleIcon, { backgroundColor: '#C8EDE3' }]}>
-            <Ionicons name="book-outline" size={26} color="#2A9D6E" />
+          <View style={styles.cardContent}>
+            <View style={[styles.roleIconContainer, { backgroundColor: COLORS.successLight }]}>
+              <View style={styles.roleIcon}>
+                <Ionicons name="book-outline" size={32} color={COLORS.success} />
+              </View>
+            </View>
+            
+            <View style={styles.cardTextContainer}>
+              <View style={styles.roleHeader}>
+                <Text style={styles.roleName}>School Staff</Text>
+                {selectedRole === 'teacher' && (
+                  <View style={styles.selectedBadge}>
+                    <Ionicons name="checkmark" size={16} color={COLORS.white} />
+                  </View>
+                )}
+              </View>
+              <Text style={styles.roleDesc}>
+                Manage classes, track attendance, and communicate with parents
+              </Text>
+            </View>
           </View>
-          <View style={styles.cardText}>
-            <Text style={styles.roleName}>Teacher</Text>
-            <Text style={styles.roleDesc}>
-              Manage classes, track attendance, and message parents.
-            </Text>
-          </View>
-          {selectedRole === 'teacher' && (
-            <Ionicons name="checkmark-circle" size={22} color="#7B6FE8" />
-          )}
         </TouchableOpacity>
 
+        {/* Parent Card */}
         <TouchableOpacity
           style={[styles.card, selectedRole === 'parent' && styles.cardSelected]}
           onPress={() => setSelectedRole('parent')}
           activeOpacity={0.85}
         >
-          <View style={[styles.roleIcon, { backgroundColor: '#FAD9C8' }]}>
-            <Ionicons name="people-outline" size={26} color="#D4622A" />
+          <View style={styles.cardContent}>
+            <View style={[styles.roleIconContainer, { backgroundColor: COLORS.secondarySoft }]}>
+              <View style={styles.roleIcon}>
+                <Ionicons name="people-outline" size={32} color={COLORS.secondary} />
+              </View>
+            </View>
+            
+            <View style={styles.cardTextContainer}>
+              <View style={styles.roleHeader}>
+                <Text style={styles.roleName}>Parent</Text>
+                {selectedRole === 'parent' && (
+                  <View style={styles.selectedBadge}>
+                    <Ionicons name="checkmark" size={16} color={COLORS.white} />
+                  </View>
+                )}
+              </View>
+              <Text style={styles.roleDesc}>
+                View updates, photos, and stay connected with teachers
+              </Text>
+            </View>
           </View>
-          <View style={styles.cardText}>
-            <Text style={styles.roleName}>Parent</Text>
-            <Text style={styles.roleDesc}>
-              See daily updates, photos, and connect with teachers.
-            </Text>
-          </View>
-          {selectedRole === 'parent' && (
-            <Ionicons name="checkmark-circle" size={22} color="#7B6FE8" />
-          )}
         </TouchableOpacity>
       </View>
 
-      {/* Bottom */}
+      {/* Bottom Section */}
       <View style={styles.bottomContent}>
         <TouchableOpacity
           style={[styles.continueButton, !selectedRole && styles.continueButtonDisabled]}
           onPress={() => {
             if (selectedRole) {
-              router.push({ pathname: '/find-school', params: { role: selectedRole } });
+              router.push({ pathname: '/sign-up', params: { role: selectedRole } });
             }
           }}
           activeOpacity={selectedRole ? 0.85 : 1}
+          disabled={!selectedRole}
         >
           <Text style={[styles.continueText, !selectedRole && styles.continueTextDisabled]}>
             Continue
           </Text>
           <Ionicons
             name="arrow-forward"
-            size={18}
-            color={selectedRole ? '#5B4FD4' : '#8A82C4'}
+            size={20}
+            color={COLORS.white}
           />
         </TouchableOpacity>
 
-        <Text style={styles.loginText}>
-          Already have an account?{' '}
-          <Text style={styles.loginLink} onPress={() => router.push('/login')}>
-            Log in
-          </Text>
-        </Text>
+        {/* Login Link */}
+        <View style={styles.loginLinkContainer}>
+          <Text style={styles.loginPrompt}>Already have an account? </Text>
+          <TouchableOpacity 
+            onPress={() => {
+              if (selectedRole) {
+                router.push({ pathname: '/login', params: { role: selectedRole } });
+              } else {
+                Alert.alert(
+                  'Select Your Role',
+                  'Please select your role (School Staff or Parent) before logging in.',
+                  [{ text: 'OK' }]
+                );
+              }
+            }} 
+            activeOpacity={0.7}
+          >
+            <Text style={styles.loginLink}>Log in</Text>
+          </TouchableOpacity>
+        </View>
       </View>
     </LinearGradient>
   );
@@ -98,48 +151,205 @@ export default function RoleSelectionScreen() {
 
 const styles = StyleSheet.create({
   container: {
-    flex: 1, paddingHorizontal: 24,
-    paddingTop: 64, paddingBottom: 40,
+    flex: 1,
+    paddingHorizontal: 24,
+    paddingTop: 60,
+    paddingBottom: 40,
+  },
+  
+  // Header Section
+  header: {
+    alignItems: 'center',
+    paddingBottom: 32,
+  },
+  logoWrapper: {
+    position: 'relative',
+    marginBottom: 20,
+  },
+  logoRing: {
+    position: 'absolute',
+    width: 110,
+    height: 110,
+    borderRadius: 55,
+    borderWidth: 2,
+    borderColor: COLORS.secondary + '30',
+    top: -10,
+    left: -10,
+  },
+  logoContainer: {
+    width: 90,
+    height: 90,
+    borderRadius: 22,
+    backgroundColor: COLORS.white,
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: COLORS.primary,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.2,
+    shadowRadius: 16,
+    elevation: 8,
+    padding: 8,
+  },
+  schoolLogo: {
+    width: '100%',
+    height: '100%',
+  },
+  headerTextContainer: {
+    alignItems: 'center',
+    gap: 12,
+  },
+  schoolName: {
+    fontSize: 22,
+    fontWeight: '800',
+    color: COLORS.primary,
+    textAlign: 'center',
+    letterSpacing: 0.5,
+  },
+  divider: {
+    width: 40,
+    height: 3,
+    backgroundColor: COLORS.secondary,
+    borderRadius: 2,
+    marginVertical: 4,
+  },
+  title: {
+    fontSize: 28,
+    fontWeight: '800',
+    color: COLORS.textPrimary,
+    textAlign: 'center',
+    letterSpacing: -0.5,
+  },
+  subtitle: {
+    fontSize: 15,
+    color: COLORS.textSecondary,
+    lineHeight: 22,
+    textAlign: 'center',
+    paddingHorizontal: 10,
+  },
+
+  // Cards Section
+  cardsContainer: {
+    flex: 1,
+    gap: 16,
+    paddingVertical: 24,
+  },
+  card: {
+    backgroundColor: COLORS.white,
+    borderRadius: 24,
+    padding: 20,
+    shadowColor: COLORS.cardShadow,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    elevation: 4,
+    borderWidth: 3,
+    borderColor: 'transparent',
+  },
+  cardSelected: {
+    borderColor: COLORS.secondary,
+    backgroundColor: COLORS.secondarySoft,
+    shadowColor: COLORS.secondary,
+    shadowOpacity: 0.2,
+    transform: [{ scale: 1.02 }],
+  },
+  cardContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 16,
+  },
+  roleIconContainer: {
+    width: 70,
+    height: 70,
+    borderRadius: 18,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  roleIcon: {
+    width: '100%',
+    height: '100%',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  cardTextContainer: {
+    flex: 1,
+    gap: 6,
+  },
+  roleHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
     justifyContent: 'space-between',
   },
-  header: { gap: 12 },
-  logoIcon: {
-    width: 56, height: 56, borderRadius: 18,
-    backgroundColor: '#FFFFFF',
-    justifyContent: 'center', alignItems: 'center', marginBottom: 8,
-    shadowColor: '#9B8FE0', shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.12, shadowRadius: 8, elevation: 4,
+  roleName: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: COLORS.textPrimary,
+    letterSpacing: -0.3,
   },
-  title: { fontSize: 32, fontWeight: '800', color: '#1A1A2E', lineHeight: 40, letterSpacing: -0.5 },
-  subtitle: { fontSize: 15, color: '#7A7A9D', lineHeight: 22 },
+  roleDesc: {
+    fontSize: 14,
+    color: COLORS.textSecondary,
+    lineHeight: 20,
+  },
+  selectedBadge: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: COLORS.primary,
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: COLORS.primary,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 4,
+  },
 
-  cardsContainer: { gap: 16 },
-  card: {
-    flexDirection: 'row', alignItems: 'center',
-    backgroundColor: '#FFFFFF', borderRadius: 20,
-    padding: 20, gap: 16,
-    shadowColor: '#9B8FE0', shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.08, shadowRadius: 12, elevation: 3,
-    borderWidth: 2, borderColor: 'transparent',
+  // Bottom Section
+  bottomContent: {
+    paddingTop: 8,
+    gap: 16,
   },
-  cardSelected: { borderColor: '#7B6FE8' },
-  roleIcon: {
-    width: 56, height: 56, borderRadius: 18,
-    justifyContent: 'center', alignItems: 'center',
-  },
-  cardText: { flex: 1, gap: 4 },
-  roleName: { fontSize: 17, fontWeight: '700', color: '#1A1A2E' },
-  roleDesc: { fontSize: 13, color: '#7A7A9D', lineHeight: 19 },
-
-  bottomContent: { gap: 20, alignItems: 'center' },
   continueButton: {
-    width: '100%', backgroundColor: '#C4BEF5', borderRadius: 50,
-    paddingVertical: 18, flexDirection: 'row',
-    alignItems: 'center', justifyContent: 'center', gap: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: COLORS.primary,
+    borderRadius: 50,
+    paddingVertical: 18,
+    paddingHorizontal: 32,
+    gap: 10,
+    shadowColor: COLORS.primary,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 6,
   },
-  continueButtonDisabled: { opacity: 0.6 },
-  continueText: { color: '#5B4FD4', fontSize: 17, fontWeight: '700', letterSpacing: 0.3 },
-  continueTextDisabled: { color: '#8A82C4' },
-  loginText: { fontSize: 14, color: '#5A5A7A' },
-  loginLink: { color: '#7B6FE8', fontWeight: '600' },
+  continueButtonDisabled: {
+    backgroundColor: COLORS.buttonDisabled,
+    shadowOpacity: 0.1,
+  },
+  continueText: {
+    color: COLORS.white,
+    fontSize: 18,
+    fontWeight: '700',
+    letterSpacing: 0.3,
+  },
+  continueTextDisabled: {
+    color: COLORS.gray,
+  },
+  loginLinkContainer: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loginPrompt: {
+    fontSize: 15,
+    color: COLORS.textSecondary,
+  },
+  loginLink: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#DAA520',
+    textDecorationLine: 'underline',
+  },
 });
