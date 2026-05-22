@@ -77,7 +77,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const publicScreens = [
       undefined, 'index', 'login', 'sign-up',
       'role-selection', 'find-school', 'parental-consent',
-      'approval-pending', 'privacy-notice', 'auth',
+      'approval-pending', 'account-pending', 'privacy-notice', 'auth', 'enter-code',
     ];
     const onPublicScreen = publicScreens.includes(segments[0] as any);
 
@@ -88,19 +88,49 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
 
     // Logged in but profile not loaded yet — wait
-    if (!profile) return;
-
-    // Awaiting approval
-    if (!profile.approved) {
-      router.replace('/approval-pending');
+    if (!profile) {
+      // Check if this is a new Google sign-up (no profile exists)
+      if (session && user) {
+        // Give it a moment to create profile, then check again
+        setTimeout(async () => {
+          const p = await fetchProfile(user.id);
+          if (!p) {
+            // No profile = new sign-up, go to account pending
+            router.replace('/account-pending');
+          }
+        }, 1000);
+      }
       return;
     }
 
-    // Navigate to role dashboard
-    const target = roleToRoute(profile.role);
-    const currentGroup = `/(${(segments[0] ?? '').replace(/[()]/g, '')})`;
-    if (currentGroup !== target) {
+    // Awaiting approval
+    if (!profile.approved) {
+      router.replace('/account-pending');
+      return;
+    }
+
+    // Check if user needs code verification (parent/teacher)
+    const needsCode = profile.role === 'parent' || profile.role === 'teacher' || profile.role === 'accountant';
+    if (needsCode && segments[0] !== 'enter-code') {
+      // Only redirect to enter-code if not already there
+      router.replace('/enter-code');
+      return;
+    }
+
+    // If on enter-code screen and role doesn't need code, go to dashboard
+    if (segments[0] === 'enter-code' && !needsCode) {
+      const target = roleToRoute(profile.role);
       router.replace(target as any);
+      return;
+    }
+
+    // Navigate to role dashboard (only if not on enter-code screen)
+    if (segments[0] !== 'enter-code') {
+      const target = roleToRoute(profile.role);
+      const currentGroup = `/(${(segments[0] ?? '').replace(/[()]/g, '')})`;
+      if (currentGroup !== target) {
+        router.replace(target as any);
+      }
     }
   }, [session, profile, loading, segments[0]]);
 
