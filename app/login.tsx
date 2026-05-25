@@ -41,8 +41,10 @@ export default function LoginScreen() {
     
     if (error) {
       Alert.alert('Login Failed', error);
+    } else {
+      // After successful login, navigate to enter-code for verification
+      router.replace('/enter-code');
     }
-    // Navigation is handled by auth context based on role
   }
 
   async function handleGoogleLogin() {
@@ -52,8 +54,10 @@ export default function LoginScreen() {
     
     if (error) {
       Alert.alert('Google Sign-In Failed', error);
+    } else {
+      // After Google login, navigate to enter-code for verification
+      router.replace('/enter-code');
     }
-    // Navigation is handled by auth context based on role
   }
 
   return (

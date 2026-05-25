@@ -121,6 +121,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // Check current segment (remove parentheses)
     const currentSegment = (segments[0] || '').replace(/[()]/g, '');
     
+    // If user is on role-selection or login screen, don't do any redirect yet
+    // Let them complete role selection and login first
+    if (currentSegment === 'role-selection' || currentSegment === 'login' || 
+        currentSegment === 'sign-up' || currentSegment === 'index' || 
+        currentSegment === undefined) {
+      console.log('On auth screens, skip redirect');
+      return;
+    }
+    
     // If user is already on their role-specific screen, don't redirect
     if (currentSegment === 'parent' || currentSegment === 'teacher' || 
         currentSegment === 'accountant') {
@@ -132,14 +141,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const needsCode = profile.role === 'parent' || profile.role === 'teacher' || profile.role === 'accountant';
 
     // If user needs code verification, redirect to enter-code
-    if (needsCode && currentSegment !== 'enter-code' && currentSegment !== 'select-class') {
+    if (needsCode && currentSegment !== 'enter-code' && currentSegment !== 'select-class' && currentSegment !== 'enter-class-id') {
       console.log('Redirecting to enter-code');
       router.replace('/enter-code');
       return;
     }
 
-    // If on enter-code or select-class, let user proceed
-    if (currentSegment === 'enter-code' || currentSegment === 'select-class') {
+    // If on enter-code, select-class, or enter-class-id, let user proceed
+    if (currentSegment === 'enter-code' || currentSegment === 'select-class' || currentSegment === 'enter-class-id') {
       return;
     }
 

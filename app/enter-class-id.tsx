@@ -17,7 +17,7 @@ import { COLORS } from '../constants/admissionTheme';
 
 const CLASS_ID_LENGTH = 6;
 
-// Demo class IDs for different classes
+// Demo class IDs for different classes (mix of letters and numbers)
 const DEMO_CLASS_IDS: { [key: string]: string } = {
   'play-group': 'PG2024',
   'pre-kg': 'PKG024',
