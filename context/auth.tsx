@@ -115,21 +115,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    // Check if user needs code verification (parent/teacher)
-    const needsCode = profile.role === 'parent' || profile.role === 'teacher' || profile.role === 'accountant';
+    // Check if user is already on their role-based dashboard
+    const isOnDashboard = segments[0] === 'parent' || segments[0] === 'teacher' || 
+                          segments[0] === 'accountant' || segments[0] === 'admin' || 
+                          segments[0] === 'principal';
     
-    // Check if user has already verified their code (stored in AsyncStorage)
-    // Only check for parent role since that's what we're testing
-    const isVerified = segments[0] === 'parent' || segments[0] === 'teacher' || segments[0] === 'accountant';
-    
-    // If user is already on their dashboard (parent/teacher/accountant), don't redirect
-    if (isVerified) {
+    // If user is already on their dashboard, don't redirect - let them stay
+    if (isOnDashboard) {
       return;
     }
 
-    // Check if user needs code verification and hasn't verified yet
+    // Check if user needs code verification (parent/teacher)
+    const needsCode = profile.role === 'parent' || profile.role === 'teacher' || profile.role === 'accountant';
+
+    // If user needs code verification and is not on enter-code or select-class, redirect there
     if (needsCode && segments[0] !== 'enter-code' && segments[0] !== 'select-class') {
-      // Only redirect to enter-code if not already there
       router.replace('/enter-code');
       return;
     }
@@ -144,14 +144,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    // If on enter-code screen and role doesn't need code, go to dashboard
-    if (segments[0] === 'enter-code' && !needsCode) {
-      const target = roleToRoute(profile.role);
-      router.replace(target as any);
-      return;
-    }
-
-    // Navigate to role dashboard (admin/principal)
+    // For admin/principal, navigate to dashboard
     if (segments[0] !== 'enter-code' && segments[0] !== 'select-class') {
       const target = roleToRoute(profile.role);
       const currentGroup = `/(${(segments[0] ?? '').replace(/[()]/g, '')})`;
