@@ -81,6 +81,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     ];
     const onPublicScreen = publicScreens.includes(segments[0] as any);
 
+    // Special case: If user is on welcome screen (index), don't auto-redirect
+    // Let them choose to login or sign up manually
+    if (segments[0] === 'index' || segments[0] === undefined) {
+      return;
+    }
+
     // Not logged in
     if (!session) {
       if (!onPublicScreen) router.replace('/login');
@@ -111,9 +117,30 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     // Check if user needs code verification (parent/teacher)
     const needsCode = profile.role === 'parent' || profile.role === 'teacher' || profile.role === 'accountant';
-    if (needsCode && segments[0] !== 'enter-code') {
+    
+    // Check if user has already verified their code (stored in AsyncStorage)
+    // Only check for parent role since that's what we're testing
+    const isVerified = segments[0] === 'parent' || segments[0] === 'teacher' || segments[0] === 'accountant';
+    
+    // If user is already on their dashboard (parent/teacher/accountant), don't redirect
+    if (isVerified) {
+      return;
+    }
+
+    // Check if user needs code verification and hasn't verified yet
+    if (needsCode && segments[0] !== 'enter-code' && segments[0] !== 'select-class') {
       // Only redirect to enter-code if not already there
       router.replace('/enter-code');
+      return;
+    }
+
+    // If on enter-code screen, don't redirect - let user enter code
+    if (segments[0] === 'enter-code') {
+      return;
+    }
+
+    // If on select-class (teacher after code verification), let them proceed
+    if (segments[0] === 'select-class') {
       return;
     }
 
@@ -124,8 +151,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    // Navigate to role dashboard (only if not on enter-code screen)
-    if (segments[0] !== 'enter-code') {
+    // Navigate to role dashboard (admin/principal)
+    if (segments[0] !== 'enter-code' && segments[0] !== 'select-class') {
       const target = roleToRoute(profile.role);
       const currentGroup = `/(${(segments[0] ?? '').replace(/[()]/g, '')})`;
       if (currentGroup !== target) {

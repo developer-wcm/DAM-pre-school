@@ -1,29 +1,34 @@
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useRouter } from 'expo-router';
 import { useRef, useState } from 'react';
 import {
-  Alert,
-  KeyboardAvoidingView,
-  Platform,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
+    Alert,
+    KeyboardAvoidingView,
+    Platform,
+    StyleSheet,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View,
 } from 'react-native';
 import { COLORS } from '../constants/admissionTheme';
+import { useAuth } from '../context/auth';
+import { supabase } from '../lib/supabase';
 
 const CODE_LENGTH = 6;
 
 export default function EnterCodeScreen() {
   const router = useRouter();
-  const params = useLocalSearchParams();
-  const userRole = params.role as string;
+  const { profile, signOut } = useAuth();
   
   const [code, setCode] = useState<string[]>(Array(CODE_LENGTH).fill(''));
+  const [loading, setLoading] = useState(false);
   const inputs = useRef<(TextInput | null)[]>([]);
+
+  // Get user role from profile
+  const userRole = profile?.role || 'parent';
 
   const handleChange = (text: string, index: number) => {
     const char = text.replace(/[^0-9]/g, '').slice(-1); // Only numbers
@@ -42,21 +47,36 @@ export default function EnterCodeScreen() {
   const isFilled = code.every((c) => c !== '');
 
   const handleVerifyCode = async () => {
-    if (!isFilled) return;
+    if (!isFilled || !profile) return;
     
     const enteredCode = code.join('');
+    setLoading(true);
     
     try {
-      // Demo codes for testing
-      const validCodes: { [key: string]: string } = {
-        'parent': '123456',
-        'teacher': '654321',
-        'accountant': '111111'
-      };
+      // Fetch the verification code from the database
+      const { data: profileData, error: fetchError } = await supabase
+        .from('profiles')
+        .select('verification_code, code_expires_at')
+        .eq('id', profile.id)
+        .single();
       
-      const expectedCode = validCodes[userRole];
-      
-      if (enteredCode === expectedCode) {
+      if (fetchError || !profileData) {
+        console.error('Error fetching profile:', fetchError);
+        Alert.alert('Error', 'Unable to verify code. Please try again.');
+        setLoading(false);
+        return;
+      }
+
+      // Check if code matches
+      if (enteredCode === profileData.verification_code) {
+        // Check if code has expired
+        if (profileData.code_expires_at && new Date(profileData.code_expires_at) < new Date()) {
+          Alert.alert('Code Expired', 'Your verification code has expired. Please contact school admin for a new code.');
+          setLoading(false);
+          return;
+        }
+
+        // Code is valid
         try {
           // Mark setup as completed
           await AsyncStorage.setItem('hasCompletedSetup', 'true');
@@ -130,6 +150,8 @@ export default function EnterCodeScreen() {
         'An unexpected error occurred. Please try again.',
         [{ text: 'OK' }]
       );
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -143,8 +165,8 @@ export default function EnterCodeScreen() {
       >
         {/* Header */}
         <View style={styles.header}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.backBtn} activeOpacity={0.7}>
-            <Ionicons name="chevron-back" size={24} color={COLORS.primary} />
+          <TouchableOpacity onPress={() => signOut()} style={styles.backBtn} activeOpacity={0.7}>
+            <Ionicons name="log-out-outline" size={24} color={COLORS.error} />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Enter Code</Text>
           <View style={styles.headerSpacer} />
@@ -191,18 +213,25 @@ export default function EnterCodeScreen() {
 
           {/* Apply Button */}
           <TouchableOpacity
-            activeOpacity={isFilled ? 0.85 : 1}
+            activeOpacity={isFilled && !loading ? 0.85 : 1}
             style={{ width: '100%' }}
             onPress={handleVerifyCode}
+            disabled={!isFilled || loading}
           >
             <LinearGradient
-              colors={isFilled ? [COLORS.primary, COLORS.primaryLight] : [COLORS.buttonDisabled, COLORS.buttonDisabled]}
+              colors={isFilled && !loading ? [COLORS.primary, COLORS.primaryLight] : [COLORS.buttonDisabled, COLORS.buttonDisabled]}
               start={{ x: 0, y: 0 }} 
               end={{ x: 1, y: 0 }}
               style={styles.applyButton}
             >
-              <Ionicons name="checkmark-circle" size={18} color={COLORS.white} />
-              <Text style={styles.applyButtonText}>Apply</Text>
+              {loading ? (
+                <Text style={styles.applyButtonText}>Verifying...</Text>
+              ) : (
+                <>
+                  <Ionicons name="checkmark-circle" size={18} color={COLORS.white} />
+                  <Text style={styles.applyButtonText}>Apply</Text>
+                </>
+              )}
             </LinearGradient>
           </TouchableOpacity>
 
