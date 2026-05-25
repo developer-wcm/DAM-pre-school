@@ -1,7 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useRouter } from 'expo-router';
 import { useState } from 'react';
 import {
     ActivityIndicator,
@@ -20,7 +19,6 @@ import { IMAGES } from '../constants/images';
 import { useAuth } from '../context/auth';
 
 export default function LoginScreen() {
-  const router = useRouter();
   const { signInWithEmail, signInWithGoogle } = useAuth();
 
   const [email, setEmail] = useState('');
@@ -38,12 +36,9 @@ export default function LoginScreen() {
     setLoading(true);
     const { error } = await signInWithEmail(email, password);
     setLoading(false);
-    
+
     if (error) {
       Alert.alert('Login Failed', error);
-    } else {
-      // After successful login, navigate to enter-code for verification
-      router.replace('/enter-code');
     }
   }
 
@@ -51,12 +46,9 @@ export default function LoginScreen() {
     setGoogleLoading(true);
     const { error } = await signInWithGoogle();
     setGoogleLoading(false);
-    
+
     if (error) {
       Alert.alert('Google Sign-In Failed', error);
-    } else {
-      // After Google login, navigate to enter-code for verification
-      router.replace('/enter-code');
     }
   }
 

@@ -1,12 +1,13 @@
 import { Session, User } from '@supabase/supabase-js';
 import { useRouter, useSegments } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
-import { createContext, useContext, useEffect, useRef, useState } from 'react';
+import { createContext, useContext, useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
+import { getAuthRedirectTarget } from '../utils/auth-routing';
 
 WebBrowser.maybeCompleteAuthSession();
 
-export type UserRole = 'admin' | 'teacher' | 'parent' | 'accountant' | null;
+export type UserRole = 'admin' | 'principal' | 'teacher' | 'parent' | 'accountant' | null;
 
 interface Profile {
   id: string;
@@ -35,16 +36,6 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | null>(null);
 
-function roleToRoute(role: UserRole): string {
-  switch (role) {
-    case 'admin':      return '/(dashboard)';
-    case 'teacher':    return '/(teacher)';
-    case 'parent':     return '/(parent)';
-    case 'accountant': return '/(accountant)';
-    default:           return '/login';
-  }
-}
-
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession]   = useState<Session | null>(null);
   const [user, setUser]         = useState<User | null>(null);
@@ -52,9 +43,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading]   = useState(true);
   const router   = useRouter();
   const segments = useSegments();
-
-  // Track whether we've already navigated to avoid loops
-  const hasNavigated = useRef(false);
 
   // ── Fetch profile ─────────────────────────────────────────────────────────
   async function fetchProfile(userId: string): Promise<Profile | null> {
@@ -81,27 +69,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     ];
     const onPublicScreen = publicScreens.includes(segments[0] as any);
 
-    // Special case: If user is on welcome screen (index), don't auto-redirect
-    // Let them choose to login or sign up manually
     if (segments[0] === 'index' || segments[0] === undefined) {
       return;
     }
 
-    // Not logged in
     if (!session) {
       if (!onPublicScreen) router.replace('/login');
       return;
     }
 
-    // Logged in but profile not loaded yet — wait
     if (!profile) {
-      // Check if this is a new Google sign-up (no profile exists)
       if (session && user) {
-        // Give it a moment to create profile, then check again
         setTimeout(async () => {
           const p = await fetchProfile(user.id);
           if (!p) {
-            // No profile = new sign-up, go to account pending
             router.replace('/account-pending');
           }
         }, 1000);
@@ -109,59 +90,36 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    // Awaiting approval
-    if (!profile.approved) {
+    const redirectTarget = getAuthRedirectTarget(profile);
+    if (!redirectTarget) {
+      return;
+    }
+
+    const currentSegment = (segments[0] || '').replace(/[()]/g, '');
+
+    if (redirectTarget === '/(dashboard)') {
+      if (currentSegment === 'dashboard') {
+        return;
+      }
+      router.replace('/(dashboard)' as any);
+      return;
+    }
+
+    if (redirectTarget === '/account-pending') {
+      if (currentSegment === 'account-pending') {
+        return;
+      }
       router.replace('/account-pending');
       return;
     }
 
-    // Debug: log the segment value
-    console.log('Auth check - segments[0]:', segments[0], 'profile role:', profile?.role);
-    
-    // Check current segment (remove parentheses)
-    const currentSegment = (segments[0] || '').replace(/[()]/g, '');
-    
-    // If user is on role-selection or login screen, don't do any redirect yet
-    // Let them complete role selection and login first
-    if (currentSegment === 'role-selection' || currentSegment === 'login' || 
-        currentSegment === 'sign-up' || currentSegment === 'index' || 
-        currentSegment === undefined) {
-      console.log('On auth screens, skip redirect');
-      return;
-    }
-    
-    // If user is already on their role-specific screen, don't redirect
-    if (currentSegment === 'parent' || currentSegment === 'teacher' || 
-        currentSegment === 'accountant') {
-      console.log('User on dashboard, skip redirect');
-      return;
-    }
-
-    // Check if user needs code verification (parent/teacher/accountant)
-    const needsCode = profile.role === 'parent' || profile.role === 'teacher' || profile.role === 'accountant';
-
-    // If user needs code verification, redirect to enter-code
-    if (needsCode && currentSegment !== 'enter-code' && currentSegment !== 'select-class' && currentSegment !== 'enter-class-id') {
-      console.log('Redirecting to enter-code');
-      router.replace('/enter-code');
-      return;
-    }
-
-    // If on enter-code, select-class, or enter-class-id, let user proceed
-    if (currentSegment === 'enter-code' || currentSegment === 'select-class' || currentSegment === 'enter-class-id') {
-      return;
-    }
-
-    // For admin/principal, navigate to dashboard
-    if (profile.role === 'admin' || profile.role === 'principal') {
-      const target = roleToRoute(profile.role);
-      const currentGroup = `/${currentSegment}`;
-      
-      if (currentGroup !== target && currentSegment !== 'login' && currentSegment !== 'index') {
-        router.replace(target as any);
+    if (redirectTarget === '/enter-code') {
+      if (currentSegment === 'enter-code' || currentSegment === 'select-class' || currentSegment === 'enter-class-id') {
+        return;
       }
+      router.replace('/enter-code');
     }
-  }, [session, profile, loading, segments[0]]);
+  }, [loading, profile, router, segments, session, user]);
 
   // ── Auth state listener ───────────────────────────────────────────────────
   useEffect(() => {
@@ -253,12 +211,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const result = await WebBrowser.openAuthSessionAsync(data.url, redirectTo);
       if (result.type !== 'success') return { error: null };
 
-      const hashPart = result.url.includes('#')
-        ? result.url.split('#')[1]
-        : result.url.split('?')[1];
-      const params = new URLSearchParams(hashPart ?? '');
-      const accessToken  = params.get('access_token');
-      const refreshToken = params.get('refresh_token');
+      // Parse the URL to get tokens - OAuth returns tokens in the URL hash fragment
+      const urlObj = new URL(result.url);
+      const hashParams = new URLSearchParams(urlObj.hash.substring(1)); // Remove # and parse
+      const accessToken = hashParams.get('access_token');
+      const refreshToken = hashParams.get('refresh_token');
 
       if (accessToken && refreshToken) {
         const { error: sessionError } = await supabase.auth.setSession({
