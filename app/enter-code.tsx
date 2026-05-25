@@ -78,8 +78,9 @@ export default function EnterCodeScreen() {
 
         // Code is valid
         try {
-          // Mark setup as completed
+          // Mark setup as completed and code as verified
           await AsyncStorage.setItem('hasCompletedSetup', 'true');
+          await AsyncStorage.setItem('codeVerified', 'true');
           await AsyncStorage.setItem('userRole', userRole);
           
           // Navigate based on role
