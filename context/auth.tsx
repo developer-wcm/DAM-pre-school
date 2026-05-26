@@ -67,10 +67,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       undefined, 'index', 'login', 'sign-up',
       'role-selection', 'find-school', 'parental-consent',
       'approval-pending', 'account-pending', 'privacy-notice', 'auth', 'enter-code',
+      'auth-callback',
     ];
     const onPublicScreen = publicScreens.includes(segments[0] as any);
+    const firstSegment = segments[0] as string | undefined;
 
-    if (segments[0] === 'index' || segments[0] === undefined) {
+    if (firstSegment === 'index' || firstSegment === undefined || firstSegment === 'auth-callback') {
       return;
     }
 
@@ -96,10 +98,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    const currentSegment = (segments[0] || '').replace(/[()]/g, '');
+    const cleanSegment = (segments[0] || '').replace(/[()]/g, '');
 
     if (redirectTarget === '/(dashboard)') {
-      if (currentSegment === 'dashboard') {
+      if (cleanSegment === 'dashboard') {
         return;
       }
       router.replace('/(dashboard)' as any);
@@ -107,7 +109,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
 
     if (redirectTarget === '/account-pending') {
-      if (currentSegment === 'account-pending') {
+      if (cleanSegment === 'account-pending') {
         return;
       }
       router.replace('/account-pending');
@@ -115,7 +117,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
 
     if (redirectTarget === '/enter-code') {
-      if (currentSegment === 'enter-code' || currentSegment === 'select-class' || currentSegment === 'enter-class-id') {
+      if (cleanSegment === 'enter-code' || cleanSegment === 'select-class' || cleanSegment === 'enter-class-id') {
         return;
       }
       router.replace('/enter-code');
@@ -123,7 +125,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
 
     if (redirectTarget === '/select-class') {
-      if (currentSegment === 'select-class' || currentSegment === 'enter-class-id' || currentSegment === 'teacher') {
+      if (cleanSegment === 'select-class' || cleanSegment === 'enter-class-id' || cleanSegment === 'teacher') {
         return;
       }
       router.replace('/select-class');
@@ -206,11 +208,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // ── Google OAuth ──────────────────────────────────────────────────────────
   async function signInWithGoogle(): Promise<{ error: string | null }> {
     try {
-      // Use localhost for Expo development, deep link for production
-      const isDevelopment = __DEV__;
-      const redirectTo = isDevelopment 
-        ? 'exp://localhost:8081' 
-        : 'preschoolapp://auth/callback';
+      // Use Expo scheme for development, custom scheme for production
+      const redirectTo = __DEV__ 
+        ? 'exp://localhost:8081/--/auth-callback'
+        : 'preschoolapp://auth-callback';
+      
+      console.log('Starting Google OAuth with redirect:', redirectTo);
       
       const { data, error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
@@ -220,34 +223,75 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           queryParams: { access_type: 'offline', prompt: 'consent' },
         },
       });
-      if (error) return { error: error.message };
+      if (error) {
+        console.error('OAuth setup error:', error);
+        return { error: error.message };
+      }
       if (!data?.url) return { error: 'Could not get OAuth URL' };
 
+      console.log('Opening OAuth URL...');
       const result = await WebBrowser.openAuthSessionAsync(data.url, redirectTo);
-      if (result.type !== 'success') return { error: null };
+      
+      console.log('OAuth result:', result.type);
+      
+      if (result.type === 'cancel') {
+        return { error: null }; // User cancelled, not an error
+      }
+      
+      if (result.type !== 'success') {
+        return { error: 'Authentication was not completed' };
+      }
 
+      console.log('OAuth success, parsing tokens...');
+      
       // Parse the URL to get tokens - OAuth returns tokens in the URL hash fragment
       const urlObj = new URL(result.url);
       const hashParams = new URLSearchParams(urlObj.hash.substring(1)); // Remove # and parse
       const accessToken = hashParams.get('access_token');
       const refreshToken = hashParams.get('refresh_token');
 
+      console.log('Tokens found:', { hasAccess: !!accessToken, hasRefresh: !!refreshToken });
+
       if (accessToken && refreshToken) {
         const { error: sessionError } = await supabase.auth.setSession({
           access_token: accessToken,
           refresh_token: refreshToken,
         });
-        if (sessionError) return { error: sessionError.message };
+        if (sessionError) {
+          console.error('Session error:', sessionError);
+          return { error: sessionError.message };
+        }
         
-        // Fetch profile and let the route guard handle redirect
+        console.log('Session set, fetching user and profile...');
+        
+        // Get the session and user
         const { data: { session: newSession } } = await supabase.auth.getSession();
         if (newSession?.user) {
+          console.log('User found:', newSession.user.id);
+          
+          // Set session and user immediately
+          setSession(newSession);
+          setUser(newSession.user);
+          
+          // Wait a bit for the trigger to create the profile
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          
+          // Fetch profile
           const p = await fetchProfile(newSession.user.id);
-          setProfile(p);
+          console.log('Profile fetched:', p);
+          
+          if (p) {
+            setProfile(p);
+            // Route guard will handle navigation based on profile state
+          } else {
+            console.warn('Profile not found after OAuth, user may need to complete setup');
+            // Profile will be null, route guard will redirect to account-pending
+          }
         }
       }
       return { error: null };
     } catch (e: any) {
+      console.error('Google OAuth error:', e);
       return { error: e?.message ?? 'Google sign-in failed' };
     }
   }

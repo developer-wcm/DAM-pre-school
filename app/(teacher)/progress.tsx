@@ -3,19 +3,9 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
 import { ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { getSkillsForClass, SKILL_LEVELS, type Skill, type SkillLevel } from '../../constants/progressSkills';
 
 type Term = 'term1' | 'term2' | 'term3';
-
-type SkillLevel = 'emerging' | 'developing' | 'proficient' | 'advanced';
-
-type Skill = {
-  id: string;
-  name: string;
-  emoji: string;
-  level: SkillLevel;
-  required: boolean;
-  notes: string;
-};
 
 type Student = {
   id: string;
@@ -26,113 +16,12 @@ type Student = {
 };
 
 const STUDENTS: Student[] = [
-  { id: '1', name: 'Priya Kumar', avatar: '👧', class: 'Junior KG', age: '4 Years Old' },
-  { id: '2', name: 'Arjun Singh', avatar: '👦', class: 'Junior KG', age: '4 Years Old' },
-  { id: '3', name: 'Rohan Mehta', avatar: '🧒', class: 'Junior KG', age: '4 Years Old' },
+  { id: '1', name: 'Priya Kumar', avatar: '👧', class: 'JKG', age: '4 Years Old' },
+  { id: '2', name: 'Arjun Singh', avatar: '👦', class: 'JKG', age: '4 Years Old' },
+  { id: '3', name: 'Rohan Mehta', avatar: '🧒', class: 'JKG', age: '4 Years Old' },
 ];
 
-// Play Group Skills Structure
-const PLAY_GROUP_SKILLS: Skill[] = [
-  // 1. Communication Skills
-  { id: 'comm-1', name: 'Listening Skills', emoji: '👂', level: 'emerging', required: true, notes: '' },
-  { id: 'comm-2', name: 'Understanding Instructions', emoji: '💭', level: 'emerging', required: true, notes: '' },
-  { id: 'comm-3', name: 'Following Instructions', emoji: '✅', level: 'emerging', required: true, notes: '' },
-  
-  // 2. Participation
-  { id: 'part-1', name: 'Arts/Crafts', emoji: '🎨', level: 'emerging', required: false, notes: '' },
-  { id: 'part-2', name: 'Any Activities', emoji: '🎯', level: 'emerging', required: false, notes: '' },
-  { id: 'part-3', name: 'Sports/Games', emoji: '⚽', level: 'emerging', required: false, notes: '' },
-  { id: 'part-4', name: 'Group Play', emoji: '🤝', level: 'emerging', required: false, notes: '' },
-  
-  // 3. Social Skills
-  { id: 'social-1', name: 'Helpful', emoji: '🤗', level: 'emerging', required: true, notes: '' },
-  { id: 'social-2', name: 'Patience', emoji: '⏳', level: 'emerging', required: true, notes: '' },
-  { id: 'social-3', name: 'Sharing', emoji: '🎁', level: 'emerging', required: true, notes: '' },
-  { id: 'social-4', name: 'Cooperation', emoji: '👥', level: 'emerging', required: true, notes: '' },
-  
-  // 4. Motor Skills
-  { id: 'motor-1', name: 'Fine Motor Skills', emoji: '✋', level: 'emerging', required: true, notes: '' },
-  { id: 'motor-2', name: 'Gross Motor Skills', emoji: '🏃', level: 'emerging', required: true, notes: '' },
-  
-  // 5. Cognitive Skills
-  { id: 'cog-1', name: 'Cognitive Development', emoji: '🧠', level: 'emerging', required: false, notes: '' },
-];
-
-// Pre-KG Skills Structure
-const PRE_KG_SKILLS: Skill[] = [
-  // 1. Communication Skills
-  { id: 'comm-1', name: 'Listening Skills', emoji: '👂', level: 'emerging', required: true, notes: '' },
-  { id: 'comm-2', name: 'Understanding Instructions', emoji: '💭', level: 'emerging', required: true, notes: '' },
-  { id: 'comm-3', name: 'Following Instructions', emoji: '✅', level: 'emerging', required: true, notes: '' },
-  
-  // 2. Participation
-  { id: 'part-1', name: 'Arts/Crafts', emoji: '🎨', level: 'emerging', required: false, notes: '' },
-  { id: 'part-2', name: 'Activities', emoji: '🎯', level: 'emerging', required: false, notes: '' },
-  { id: 'part-3', name: 'Sports/Games', emoji: '⚽', level: 'emerging', required: false, notes: '' },
-  { id: 'part-4', name: 'Group Play', emoji: '🤝', level: 'emerging', required: false, notes: '' },
-  
-  // 3. Social Skills
-  { id: 'social-1', name: 'Helpful', emoji: '🤗', level: 'emerging', required: true, notes: '' },
-  { id: 'social-2', name: 'Patience', emoji: '⏳', level: 'emerging', required: true, notes: '' },
-  { id: 'social-3', name: 'Sharing', emoji: '🎁', level: 'emerging', required: true, notes: '' },
-  { id: 'social-4', name: 'Co-operation', emoji: '👥', level: 'emerging', required: true, notes: '' },
-  
-  // 4. Cognitive
-  { id: 'cog-1', name: 'Cognitive Skills', emoji: '🧠', level: 'emerging', required: true, notes: '' },
-  
-  // 5. Motor Skills
-  { id: 'motor-1', name: 'Motor Skills', emoji: '🏃', level: 'emerging', required: true, notes: '' },
-  
-  // 6. Numerical Literacy
-  { id: 'num-1', name: 'Numerical Literacy', emoji: '🔢', level: 'emerging', required: true, notes: '' },
-  
-  // 7. Language Literacy
-  { id: 'lang-1', name: 'English Language', emoji: '🅰️', level: 'emerging', required: true, notes: '' },
-  { id: 'lang-2', name: 'Second Language', emoji: '🌐', level: 'emerging', required: false, notes: '' },
-  
-  // 8. General Knowledge (UTW)
-  { id: 'gk-1', name: 'General Knowledge (UTW)', emoji: '🌍', level: 'emerging', required: false, notes: '' },
-];
-
-// Junior KG & Senior KG Skills Structure (same for both)
-const JUNIOR_SENIOR_KG_SKILLS: Skill[] = [
-  // 1. Language Literacy
-  { id: 'lang-1', name: 'English Language', emoji: '🅰️', level: 'emerging', required: true, notes: '' },
-  { id: 'lang-2', name: 'Second Language', emoji: '🌐', level: 'emerging', required: false, notes: '' },
-  
-  // 2. General Knowledge (UTW)
-  { id: 'gk-1', name: 'General Knowledge (UTW)', emoji: '🌍', level: 'emerging', required: false, notes: '' },
-  
-  // 3. Numerical Literacy
-  { id: 'num-1', name: 'Numerical Literacy', emoji: '🔢', level: 'emerging', required: true, notes: '' },
-  
-  // 4. Rhymes and Songs
-  { id: 'rhyme-1', name: 'Rhymes and Songs', emoji: '🎵', level: 'emerging', required: false, notes: '' },
-  
-  // 5. Participation
-  { id: 'part-1', name: 'Arts/Crafts', emoji: '🎨', level: 'emerging', required: false, notes: '' },
-  { id: 'part-2', name: 'Activities', emoji: '🎯', level: 'emerging', required: false, notes: '' },
-  { id: 'part-3', name: 'Sports/Games', emoji: '⚽', level: 'emerging', required: false, notes: '' },
-  { id: 'part-4', name: 'Group Play', emoji: '🤝', level: 'emerging', required: false, notes: '' },
-  
-  // 6. Social Skills
-  { id: 'social-1', name: 'Helpful', emoji: '🤗', level: 'emerging', required: true, notes: '' },
-  { id: 'social-2', name: 'Patience', emoji: '⏳', level: 'emerging', required: true, notes: '' },
-  { id: 'social-3', name: 'Sharing', emoji: '🎁', level: 'emerging', required: true, notes: '' },
-  { id: 'social-4', name: 'Co-operation', emoji: '👥', level: 'emerging', required: true, notes: '' },
-  
-  // 7. Cognitive
-  { id: 'cog-1', name: 'Cognitive Skills', emoji: '🧠', level: 'emerging', required: true, notes: '' },
-];
-
-const INITIAL_SKILLS: Skill[] = JUNIOR_SENIOR_KG_SKILLS;
-
-const SKILL_LEVELS: { value: SkillLevel; label: string }[] = [
-  { value: 'emerging', label: 'Emerging' },
-  { value: 'developing', label: 'Developing' },
-  { value: 'proficient', label: 'Proficient' },
-  { value: 'advanced', label: 'Advanced' },
-];
+const INITIAL_SKILLS: Skill[] = getSkillsForClass('JKG');
 
 export default function TeacherProgressScreen() {
   const router = useRouter();
