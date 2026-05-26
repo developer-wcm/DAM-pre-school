@@ -36,4 +36,24 @@ describe('getAuthRedirectTarget', () => {
       })
     ).toBe('/enter-code');
   });
+
+  it('routes verified parents to the parent group', () => {
+    expect(
+      getAuthRedirectTarget({
+        role: 'parent',
+        approved: true,
+        code_verified: true,
+      })
+    ).toBe('/(parent)');
+  });
+
+  it('routes verified accountants to the accountant group', () => {
+    expect(
+      getAuthRedirectTarget({
+        role: 'accountant',
+        approved: true,
+        code_verified: true,
+      })
+    ).toBe('/(accountant)');
+  });
 });
