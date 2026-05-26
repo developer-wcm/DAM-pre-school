@@ -49,6 +49,12 @@ export default function LoginScreen() {
 
     if (error) {
       Alert.alert('Google Sign-In Failed', error);
+    } else {
+      // Google login succeeded, wait for auth to update then redirect
+      setTimeout(() => {
+        // Navigate to enter-code for verification
+        router.replace('/enter-code');
+      }, 1000);
     }
   }
 
