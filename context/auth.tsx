@@ -196,7 +196,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // ── Google OAuth ──────────────────────────────────────────────────────────
   async function signInWithGoogle(): Promise<{ error: string | null }> {
     try {
-      const redirectTo = 'preschoolapp://auth/callback';
+      // Use localhost for Expo development, deep link for production
+      const isDevelopment = __DEV__;
+      const redirectTo = isDevelopment 
+        ? 'exp://localhost:8081' 
+        : 'preschoolapp://auth/callback';
+      
       const { data, error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
@@ -224,21 +229,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         });
         if (sessionError) return { error: sessionError.message };
         
-        // Wait a moment for session to be set, then redirect based on role
-        setTimeout(async () => {
-          const { data: { session: newSession } } = await supabase.auth.getSession();
-          if (newSession?.user) {
-            const p = await fetchProfile(newSession.user.id);
-            setProfile(p);
-            
-            // Manual redirect based on role
-            if (p?.role === 'parent' || p?.role === 'teacher' || p?.role === 'accountant') {
-              router.replace('/enter-code');
-            } else if (p?.role === 'admin' || p?.role === 'principal') {
-              router.replace('/(dashboard)');
-            }
-          }
-        }, 500);
+        // Fetch profile and let the route guard handle redirect
+        const { data: { session: newSession } } = await supabase.auth.getSession();
+        if (newSession?.user) {
+          const p = await fetchProfile(newSession.user.id);
+          setProfile(p);
+        }
       }
       return { error: null };
     } catch (e: any) {

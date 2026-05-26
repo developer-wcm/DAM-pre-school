@@ -1,6 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Tabs } from 'expo-router';
-import { StyleSheet } from 'react-native';
+import { StyleSheet, View } from 'react-native';
+import { AppColors, AppShadows } from '../../constants/theme';
 
 export default function DashboardLayout() {
   return (
@@ -8,37 +9,69 @@ export default function DashboardLayout() {
       screenOptions={{
         headerShown: false,
         tabBarStyle: styles.tabBar,
-        tabBarActiveTintColor: '#7B6FE8',
-        tabBarInactiveTintColor: '#9A9AB0',
-        tabBarLabelStyle: styles.tabLabel,
+        tabBarActiveTintColor: AppColors.primaryBlue,
+        tabBarInactiveTintColor: AppColors.textTertiary,
+        tabBarShowLabel: false,
       }}
     >
       <Tabs.Screen
         name="index"
         options={{
           title: 'Home',
-          tabBarIcon: ({ color, size }) => <Ionicons name="home" size={size} color={color} />,
+          tabBarIcon: ({ color, focused }) => (
+            <View style={[styles.iconContainer, focused && styles.iconContainerActive]}>
+              <Ionicons 
+                name={focused ? 'grid' : 'grid-outline'} 
+                size={focused ? 28 : 24} 
+                color={color} 
+              />
+            </View>
+          ),
         }}
       />
       <Tabs.Screen
         name="students"
         options={{
           title: 'Students',
-          tabBarIcon: ({ color, size }) => <Ionicons name="people" size={size} color={color} />,
+          tabBarIcon: ({ color, focused }) => (
+            <View style={[styles.iconContainer, focused && styles.iconContainerActive]}>
+              <Ionicons 
+                name={focused ? 'school' : 'school-outline'} 
+                size={focused ? 28 : 24} 
+                color={focused ? AppColors.white : color} 
+              />
+            </View>
+          ),
         }}
       />
       <Tabs.Screen
         name="fees"
         options={{
           title: 'Fees',
-          tabBarIcon: ({ color, size }) => <Ionicons name="wallet" size={size} color={color} />,
+          tabBarIcon: ({ color, focused }) => (
+            <View style={[styles.iconContainer, focused && styles.iconContainerActive]}>
+              <Ionicons 
+                name={focused ? 'people' : 'people-outline'} 
+                size={focused ? 28 : 24} 
+                color={color} 
+              />
+            </View>
+          ),
         }}
       />
       <Tabs.Screen
         name="more"
         options={{
           title: 'More',
-          tabBarIcon: ({ color, size }) => <Ionicons name="ellipsis-horizontal" size={size} color={color} />,
+          tabBarIcon: ({ color, focused }) => (
+            <View style={[styles.iconContainer, focused && styles.iconContainerActive]}>
+              <Ionicons 
+                name={focused ? 'settings' : 'settings-outline'} 
+                size={focused ? 28 : 24} 
+                color={color} 
+              />
+            </View>
+          ),
         }}
       />
     </Tabs>
@@ -47,19 +80,25 @@ export default function DashboardLayout() {
 
 const styles = StyleSheet.create({
   tabBar: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: AppColors.white,
     borderTopWidth: 0,
-    elevation: 8,
-    shadowColor: '#9B8FE0',
-    shadowOffset: { width: 0, height: -4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 12,
-    height: 70,
-    paddingBottom: 12,
-    paddingTop: 8,
+    ...AppShadows.elevatedShadow,
+    height: 80,
+    paddingBottom: 16,
+    paddingTop: 12,
   },
-  tabLabel: {
-    fontSize: 11,
-    fontWeight: '600',
+  iconContainer: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  iconContainerActive: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: AppColors.primaryBlue,
+    ...AppShadows.goldGlow,
   },
 });
