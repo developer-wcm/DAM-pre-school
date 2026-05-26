@@ -5,14 +5,34 @@
 -- Function to create profile automatically
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS TRIGGER AS $$
+DECLARE
+  user_role TEXT;
+  school_id TEXT;
+  verification_code TEXT;
 BEGIN
-  INSERT INTO public.profiles (id, full_name, role, school_id, approved)
+  user_role := COALESCE(NEW.raw_user_meta_data->>'role', 'parent');
+  
+  -- Set school_id, default to DEMO01 if not provided
+  school_id := COALESCE(NEW.raw_user_meta_data->>'school_id', 'DEMO01');
+  
+  -- Set verification code based on role
+  IF user_role = 'teacher' THEN
+    verification_code := '654321';
+  ELSIF user_role = 'parent' THEN
+    verification_code := '123456';
+  ELSE
+    verification_code := LPAD(FLOOR(RANDOM() * 1000000)::TEXT, 6, '0');
+  END IF;
+
+  INSERT INTO public.profiles (id, full_name, role, school_id, approved, verification_code, code_expires_at)
   VALUES (
     NEW.id,
     COALESCE(NEW.raw_user_meta_data->>'full_name', 'New User'),
-    COALESCE(NEW.raw_user_meta_data->>'role', 'parent'),
-    NEW.raw_user_meta_data->>'school_id',
-    false  -- New users need approval
+    user_role,
+    school_id,
+    false,  -- New users need approval
+    verification_code,
+    now() + interval '1 year'
   );
   RETURN NEW;
 END;

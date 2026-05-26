@@ -4,14 +4,14 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { useRef, useState } from 'react';
 import {
-    Alert,
-    KeyboardAvoidingView,
-    Platform,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View,
+  Alert,
+  KeyboardAvoidingView,
+  Platform,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from 'react-native';
 import { COLORS } from '../constants/admissionTheme';
 import { useAuth } from '../context/auth';
@@ -78,6 +78,16 @@ export default function EnterCodeScreen() {
 
         // Code is valid
         try {
+          // Update database to mark code as verified
+          const { error: updateError } = await supabase
+            .from('profiles')
+            .update({ code_verified: true })
+            .eq('id', profile.id);
+          
+          if (updateError) {
+            console.error('Error marking code as verified:', updateError);
+          }
+          
           // Mark setup as completed and code as verified
           await AsyncStorage.setItem('hasCompletedSetup', 'true');
           await AsyncStorage.setItem('codeVerified', 'true');

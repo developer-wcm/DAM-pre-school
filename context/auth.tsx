@@ -15,6 +15,7 @@ interface Profile {
   role: UserRole;
   school_id: string | null;
   approved: boolean;
+  code_verified?: boolean;
 }
 
 interface AuthContextType {
@@ -118,6 +119,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return;
       }
       router.replace('/enter-code');
+      return;
+    }
+
+    if (redirectTarget === '/select-class') {
+      if (currentSegment === 'select-class' || currentSegment === 'enter-class-id' || currentSegment === 'teacher') {
+        return;
+      }
+      router.replace('/select-class');
+      return;
     }
   }, [loading, profile, router, segments, session, user]);
 

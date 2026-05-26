@@ -26,20 +26,42 @@ create policy "Allow profile insert"
 
 create or replace function public.handle_new_user()
 returns trigger as $$
+declare
+  school_id text;
+  verification_code text;
+  user_role text;
 begin
-  insert into public.profiles (id, full_name, role, school_id, approved)
+  user_role := coalesce(new.raw_user_meta_data->>'role', 'parent');
+  
+  -- Set school_id, default to DEMO01 if not provided
+  school_id := coalesce(new.raw_user_meta_data->>'school_id', 'DEMO01');
+  
+  -- Set verification code based on role
+  if user_role = 'teacher' then
+    verification_code := '654321';
+  elsif user_role = 'parent' then
+    verification_code := '123456';
+  else
+    verification_code := lpad(floor(random() * 1000000)::text, 6, '0');
+  end if;
+  
+  insert into public.profiles (id, full_name, role, school_id, approved, verification_code, code_expires_at)
   values (
     new.id,
     coalesce(new.raw_user_meta_data->>'full_name', new.email),
-    coalesce(new.raw_user_meta_data->>'role', 'parent'),
-    new.raw_user_meta_data->>'school_id',
-    false
+    user_role,
+    school_id,
+    false,
+    verification_code,
+    now() + interval '1 year'
   )
   on conflict (id) do update
     set
       full_name = coalesce(excluded.full_name, public.profiles.full_name),
       role      = coalesce(excluded.role, public.profiles.role),
-      school_id = coalesce(excluded.school_id, public.profiles.school_id);
+      school_id = coalesce(excluded.school_id, public.profiles.school_id),
+      verification_code = coalesce(excluded.verification_code, public.profiles.verification_code),
+      code_expires_at = coalesce(excluded.code_expires_at, public.profiles.code_expires_at);
   return new;
 end;
 $$ language plpgsql security definer;

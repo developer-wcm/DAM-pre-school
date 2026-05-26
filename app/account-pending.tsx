@@ -1,36 +1,134 @@
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
-import { useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
-    Animated,
-    Image,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View
+  ActivityIndicator,
+  Alert,
+  Animated,
+  Image,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+
 import { COLORS } from '../constants/admissionTheme';
 import { IMAGES } from '../constants/images';
+import { useAuth } from '../context/auth';
+import { supabase } from '../lib/supabase';
 
 export default function AccountPendingScreen() {
   const router = useRouter();
-  
-  // Animation values
+  const { user, profile, signOut } = useAuth();
+
+  const [checking, setChecking] = useState(false);
+  const [schoolName, setSchoolName] = useState('Your School');
+  const [schoolIdLabel, setSchoolIdLabel] = useState<string | null>(null);
+
   const fadeAnim = useRef(new Animated.Value(0)).current;
-  const scaleAnim = useRef(new Animated.Value(0)).current;
+  const scaleAnim = useRef(new Animated.Value(0.8)).current;
   const pulseAnim = useRef(new Animated.Value(1)).current;
 
+  // =========================
+  // CHECK APPROVAL STATUS
+  // =========================
+  const checkApprovalStatus = useCallback(async () => {
+    try {
+      if (!user?.id) return;
+
+      setChecking(true);
+
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('approved, role')
+        .eq('id', user.id)
+        .maybeSingle();
+
+      if (error) {
+        console.log('Approval check error:', error.message);
+        return;
+      }
+
+      if (!data) {
+        console.log('No profile found');
+        return;
+      }
+
+      if (data.approved === true) {
+        let redirectPath: any = '/';
+
+        switch (data.role) {
+          case 'teacher':
+            redirectPath = '/(teacher)';
+            break;
+
+          case 'parent':
+            redirectPath = '/(parent)';
+            break;
+
+          case 'admin':
+            redirectPath = '/(admin)';
+            break;
+
+          case 'principal':
+            redirectPath = '/(principal)';
+            break;
+
+          case 'accountant':
+            redirectPath = '/(accountant)';
+            break;
+
+          default:
+            redirectPath = '/';
+        }
+
+        Alert.alert(
+          'Account Approved',
+          'Your account has been approved successfully.',
+          [
+            {
+              text: 'Continue',
+              onPress: () => {
+                router.replace(redirectPath);
+              },
+            },
+          ]
+        );
+      }
+    } catch (err: any) {
+      console.log('Unexpected error:', err?.message);
+    } finally {
+      setChecking(false);
+    }
+  }, [router, user?.id]);
+
+  // =========================
+  // AUTO CHECK EVERY 10 SEC
+  // =========================
   useEffect(() => {
-    // Start entrance animations
+    checkApprovalStatus();
+
+    const interval = setInterval(() => {
+      checkApprovalStatus();
+    }, 10000);
+
+    return () => clearInterval(interval);
+  }, [checkApprovalStatus]);
+
+  // =========================
+  // ANIMATIONS
+  // =========================
+  useEffect(() => {
     Animated.parallel([
       Animated.timing(fadeAnim, {
         toValue: 1,
         duration: 800,
         useNativeDriver: true,
       }),
+
       Animated.spring(scaleAnim, {
         toValue: 1,
         friction: 4,
@@ -39,14 +137,14 @@ export default function AccountPendingScreen() {
       }),
     ]).start();
 
-    // Pulse animation for icon
     Animated.loop(
       Animated.sequence([
         Animated.timing(pulseAnim, {
-          toValue: 1.1,
+          toValue: 1.08,
           duration: 1500,
           useNativeDriver: true,
         }),
+
         Animated.timing(pulseAnim, {
           toValue: 1,
           duration: 1500,
@@ -56,143 +154,224 @@ export default function AccountPendingScreen() {
     ).start();
   }, []);
 
+  // =========================
+  // LOAD SCHOOL DETAILS
+  // =========================
+  useEffect(() => {
+    async function loadSchoolDetails() {
+      try {
+        const schoolId = profile?.school_id;
+
+        if (!schoolId) {
+          setSchoolName('Your School');
+          setSchoolIdLabel(null);
+          return;
+        }
+
+        setSchoolIdLabel(schoolId);
+
+        // Search using join code
+        const { data: joinData } = await supabase
+          .from('schools')
+          .select('name')
+          .eq('join_code', schoolId)
+          .maybeSingle();
+
+        if (joinData?.name) {
+          setSchoolName(joinData.name);
+          return;
+        }
+
+        // Search using id
+        const { data: idData } = await supabase
+          .from('schools')
+          .select('name')
+          .eq('id', schoolId)
+          .maybeSingle();
+
+        if (idData?.name) {
+          setSchoolName(idData.name);
+          return;
+        }
+
+        setSchoolName('Your School');
+      } catch (error) {
+        console.log('School fetch error:', error);
+      }
+    }
+
+    loadSchoolDetails();
+  }, [profile?.school_id]);
+
   return (
     <SafeAreaView style={styles.container}>
-      <ScrollView 
+      <ScrollView
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-        {/* Header Section */}
-        <LinearGradient 
-          colors={[COLORS.primary, COLORS.primaryLight, `${COLORS.secondary}40`]}
+        {/* HEADER */}
+        <LinearGradient
+          colors={[
+            COLORS.primary,
+            COLORS.primaryLight,
+            `${COLORS.secondary}40`,
+          ]}
           style={styles.headerSection}
         >
-          <Animated.View 
+          <Animated.View
             style={[
               styles.headerContent,
-              { opacity: fadeAnim }
+              {
+                opacity: fadeAnim,
+              },
             ]}
           >
-            {/* School Name */}
-            <Text style={styles.schoolName}>DMA PRESCHOOL</Text>
+            <Text style={styles.schoolName}>
+              {schoolName.toUpperCase()}
+            </Text>
 
-            {/* Logo Circle */}
+            {schoolIdLabel ? (
+              <Text style={styles.schoolIdText}>
+                School ID: {schoolIdLabel}
+              </Text>
+            ) : null}
+
+            {/* LOGO */}
             <Animated.View
               style={[
                 styles.logoCircle,
                 {
-                  transform: [{ scale: scaleAnim }]
-                }
+                  transform: [{ scale: scaleAnim }],
+                },
               ]}
             >
-              <Image 
-                source={IMAGES.schoolLogo} 
+              <Image
+                source={IMAGES.schoolLogo}
                 style={styles.schoolLogoImage}
                 resizeMode="contain"
               />
             </Animated.View>
 
-            {/* Title */}
-            <Text style={styles.title}>Account Pending Approval</Text>
+            <Text style={styles.title}>
+              Account Pending Approval
+            </Text>
+
             <Text style={styles.subtitle}>
-              Your account is being reviewed by the school administration
+              Your account is currently under review by
+              the school administration.
             </Text>
           </Animated.View>
         </LinearGradient>
 
-        {/* Content Section */}
+        {/* CONTENT */}
         <View style={styles.contentSection}>
-        <Animated.View 
-          style={[
-            styles.card,
-            {
-              opacity: fadeAnim,
-              transform: [{ scale: scaleAnim }]
-            }
-          ]}
-        >
-          {/* Clock Icon */}
-          <Animated.View 
+          <Animated.View
             style={[
-              styles.iconContainer,
+              styles.card,
               {
-                transform: [{ scale: pulseAnim }]
-              }
+                opacity: fadeAnim,
+                transform: [{ scale: scaleAnim }],
+              },
             ]}
           >
-            <Ionicons name="time-outline" size={48} color={COLORS.warning} />
-          </Animated.View>
-
-          {/* Message */}
-          <Text style={styles.messageTitle}>Verification in Progress</Text>
-          <Text style={styles.messageText}>
-            If your child is enrolled here, your account will be activated by the school within 4 hours. You will be provided with a 6-digit code, to be used during each login.
-          </Text>
-
-          {/* Exit Button - Inside Card */}
-          <TouchableOpacity 
-            style={styles.exitButton}
-            activeOpacity={0.8}
-            onPress={() => router.replace('/')}
-          >
-            <Text style={styles.exitButtonText}>Exit</Text>
-          </TouchableOpacity>
-        </Animated.View>
-
-        {/* OR Divider */}
-        <View style={styles.orDivider}>
-          <View style={styles.orLine} />
-          <Text style={styles.orText}>OR</Text>
-          <View style={styles.orLine} />
-        </View>
-
-        {/* New Admission Section */}
-        <Animated.View 
-          style={[
-            styles.newAdmissionSection,
-            {
-              opacity: fadeAnim,
-              transform: [{ scale: scaleAnim }]
-            }
-          ]}
-        >
-          <Text style={styles.newAdmissionLabel}>For New Admission</Text>
-          <TouchableOpacity
-            style={styles.enrollButton}
-            onPress={() => router.push('/admission/step-1')}
-            activeOpacity={0.85}
-          >
-            <LinearGradient
-              colors={['#DAA520', '#C8941C']}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 0 }}
-              style={styles.enrollButtonGradient}
+            {/* ICON */}
+            <Animated.View
+              style={[
+                styles.iconContainer,
+                {
+                  transform: [{ scale: pulseAnim }],
+                },
+              ]}
             >
-              <Text style={styles.enrollButtonText}>Enroll here</Text>
-              <Ionicons name="arrow-forward" size={20} color={COLORS.white} />
-            </LinearGradient>
-          </TouchableOpacity>
-        </Animated.View>
+              <Ionicons
+                name="time-outline"
+                size={48}
+                color={COLORS.warning}
+              />
+            </Animated.View>
+
+            <Text style={styles.messageTitle}>
+              Verification in Progress
+            </Text>
+
+            <Text style={styles.messageText}>
+              Your account has been created successfully.
+              The school administration will verify and
+              approve your account shortly.
+            </Text>
+
+            {/* STATUS */}
+            <View style={styles.statusBox}>
+              {checking ? (
+                <>
+                  <ActivityIndicator color={COLORS.primary} />
+
+                  <Text style={styles.statusText}>
+                    Checking approval status...
+                  </Text>
+                </>
+              ) : (
+                <>
+                  <Ionicons
+                    name="hourglass-outline"
+                    size={18}
+                    color={COLORS.warning}
+                  />
+
+                  <Text style={styles.statusText}>
+                    Waiting for admin approval
+                  </Text>
+                </>
+              )}
+            </View>
+
+            {/* REFRESH */}
+            <TouchableOpacity
+              style={styles.refreshButton}
+              activeOpacity={0.85}
+              onPress={checkApprovalStatus}
+            >
+              <Ionicons
+                name="refresh-outline"
+                size={18}
+                color={COLORS.white}
+              />
+
+              <Text style={styles.refreshButtonText}>
+                Refresh Status
+              </Text>
+            </TouchableOpacity>
+
+            {/* SIGN OUT */}
+            <TouchableOpacity
+              style={styles.exitButton}
+              activeOpacity={0.85}
+              onPress={signOut}
+            >
+              <Text style={styles.exitButtonText}>
+                Sign Out
+              </Text>
+            </TouchableOpacity>
+          </Animated.View>
         </View>
 
-        {/* Spacer for bottom */}
-        <View style={{ height: 100 }} />
+        <View style={{ height: 60 }} />
       </ScrollView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { 
-    flex: 1, 
-    backgroundColor: COLORS.background 
+  container: {
+    flex: 1,
+    backgroundColor: COLORS.background,
   },
+
   scrollContent: {
     flexGrow: 1,
     paddingBottom: 40,
   },
 
-  // Header Section
   headerSection: {
     paddingTop: 20,
     paddingBottom: 40,
@@ -200,49 +379,54 @@ const styles = StyleSheet.create({
     borderBottomLeftRadius: 30,
     borderBottomRightRadius: 30,
   },
+
   headerContent: {
     alignItems: 'center',
     paddingTop: 20,
   },
+
   schoolName: {
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: '700',
     color: `${COLORS.white}CC`,
     letterSpacing: 2,
-    marginBottom: 30,
+    marginBottom: 8,
     textAlign: 'center',
   },
 
-  // Logo
+  schoolIdText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: `${COLORS.white}B3`,
+    letterSpacing: 1,
+    marginBottom: 18,
+    textAlign: 'center',
+  },
+
   logoCircle: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
+    width: 90,
+    height: 90,
+    borderRadius: 45,
     backgroundColor: COLORS.white,
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 20,
-    shadowColor: COLORS.primary,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
     elevation: 8,
-    overflow: 'hidden',
-  },
-  schoolLogoImage: {
-    width: 60,
-    height: 60,
   },
 
-  // Text Content
+  schoolLogoImage: {
+    width: 65,
+    height: 65,
+  },
+
   title: {
     fontSize: 26,
     fontWeight: '800',
     color: COLORS.white,
     textAlign: 'center',
     marginBottom: 12,
-    letterSpacing: -0.5,
   },
+
   subtitle: {
     fontSize: 15,
     color: `${COLORS.white}E6`,
@@ -250,122 +434,91 @@ const styles = StyleSheet.create({
     lineHeight: 22,
   },
 
-  // Content Section
   contentSection: {
     padding: 20,
   },
+
   card: {
     backgroundColor: COLORS.white,
-    borderRadius: 20,
+    borderRadius: 22,
     padding: 24,
-    shadowColor: COLORS.cardShadow,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.12,
-    shadowRadius: 12,
-    elevation: 4,
     alignItems: 'center',
+    elevation: 4,
   },
 
-  // Icon
   iconContainer: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
+    width: 82,
+    height: 82,
+    borderRadius: 41,
     backgroundColor: COLORS.warningLight,
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 20,
   },
 
-  // Message
   messageTitle: {
-    fontSize: 20,
+    fontSize: 21,
     fontWeight: '700',
     color: COLORS.textPrimary,
-    textAlign: 'center',
     marginBottom: 12,
+    textAlign: 'center',
   },
+
   messageText: {
     fontSize: 15,
     color: COLORS.textSecondary,
-    textAlign: 'center',
     lineHeight: 22,
+    textAlign: 'center',
+    marginBottom: 24,
+  },
+
+  statusBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: COLORS.warningLight,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderRadius: 14,
     marginBottom: 20,
   },
 
-  // Exit Button - Inside Card (Small)
+  statusText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: COLORS.textPrimary,
+  },
+
+  refreshButton: {
+    width: '100%',
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: COLORS.primary,
+    borderRadius: 14,
+    paddingVertical: 15,
+    marginBottom: 12,
+  },
+
+  refreshButtonText: {
+    color: COLORS.white,
+    fontSize: 15,
+    fontWeight: '700',
+  },
+
   exitButton: {
+    width: '100%',
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: COLORS.error,
-    borderRadius: 8,
-    paddingVertical: 10,
-    paddingHorizontal: 24,
-    alignSelf: 'center',
-    shadowColor: COLORS.error,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.15,
-    shadowRadius: 3,
-    elevation: 2,
+    borderRadius: 14,
+    paddingVertical: 15,
   },
+
   exitButtonText: {
     color: COLORS.white,
-    fontSize: 13,
+    fontSize: 15,
     fontWeight: '700',
-    letterSpacing: 0.3,
-  },
-
-  // OR Divider
-  orDivider: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginVertical: 24,
-    paddingHorizontal: 20,
-  },
-  orLine: {
-    flex: 1,
-    height: 1,
-    backgroundColor: COLORS.lightGray,
-  },
-  orText: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: COLORS.gray,
-    marginHorizontal: 16,
-  },
-
-  // New Admission Section
-  newAdmissionSection: {
-    alignItems: 'center',
-    gap: 16,
-  },
-  newAdmissionLabel: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: COLORS.textPrimary,
-  },
-  enrollButton: {
-    width: '100%',
-    borderRadius: 50,
-    overflow: 'hidden',
-    shadowColor: '#DAA520',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 6,
-  },
-  enrollButtonGradient: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 10,
-    paddingVertical: 18,
-    paddingHorizontal: 24,
-  },
-  enrollButtonText: {
-    color: COLORS.white,
-    fontSize: 17,
-    fontWeight: '700',
-    letterSpacing: 0.3,
   },
 });

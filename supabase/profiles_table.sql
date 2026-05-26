@@ -32,13 +32,25 @@ create policy "Users can insert own profile"
 -- 6. Auto-create a profile row when a new user signs up via Google OAuth
 create or replace function public.handle_new_user()
 returns trigger as $$
+declare
+  school_id text;
+  verification_code text;
 begin
-  insert into public.profiles (id, full_name, role, approved)
+  -- Set school_id, default to DEMO01 if not provided
+  school_id := coalesce(new.raw_user_meta_data->>'school_id', 'DEMO01');
+  
+  -- Set verification code (Google sign-ups default to parent role)
+  verification_code := '123456';
+  
+  insert into public.profiles (id, full_name, role, school_id, approved, verification_code, code_expires_at)
   values (
     new.id,
-    new.raw_user_meta_data->>'full_name',
+    coalesce(new.raw_user_meta_data->>'full_name', new.email),
     'parent',   -- default role for Google sign-ups; admin can change later
-    false
+    school_id,
+    false,
+    verification_code,
+    now() + interval '1 year'
   )
   on conflict (id) do nothing;
   return new;
