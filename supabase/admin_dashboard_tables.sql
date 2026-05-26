@@ -177,7 +177,7 @@ LANGUAGE plpgsql
 AS $$
 BEGIN
   UPDATE profiles
-  SET approved = TRUE, updated_at = NOW()
+  SET approved = TRUE
   WHERE id = p_user_id;
 END;
 $$;

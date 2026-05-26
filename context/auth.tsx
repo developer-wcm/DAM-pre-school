@@ -33,6 +33,7 @@ interface AuthContextType {
   ) => Promise<{ error: string | null }>;
   signInWithGoogle: () => Promise<{ error: string | null }>;
   signOut: () => Promise<void>;
+  markCodeVerified: () => Promise<{ error: string | null }>;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
@@ -129,6 +130,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       router.replace('/select-class');
       return;
     }
+
+    if (redirectTarget === '/(parent)') {
+      if (currentSegment === 'parent') {
+        return;
+      }
+      router.replace('/(parent)' as any);
+      return;
+    }
+
+    if (redirectTarget === '/(accountant)') {
+      if (currentSegment === 'accountant') {
+        return;
+      }
+      router.replace('/(accountant)' as any);
+      return;
+    }
   }, [loading, profile, router, segments, session, user]);
 
   // ── Auth state listener ───────────────────────────────────────────────────
@@ -203,6 +220,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return { error: null };
   }
 
+  async function markCodeVerified(): Promise<{ error: string | null }> {
+    if (!user?.id) {
+      return { error: 'No signed-in user found.' };
+    }
+
+    const { error } = await supabase
+      .from('profiles')
+      .update({ code_verified: true })
+      .eq('id', user.id);
+
+    if (error) {
+      return { error: error.message };
+    }
+
+    setProfile((current) => (
+      current ? { ...current, code_verified: true } : current
+    ));
+
+    return { error: null };
+  }
+
   // ── Google OAuth ──────────────────────────────────────────────────────────
   async function signInWithGoogle(): Promise<{ error: string | null }> {
     try {
@@ -264,7 +302,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   return (
     <AuthContext.Provider value={{
       session, user, profile, loading,
-      signInWithEmail, signUpWithEmail, signInWithGoogle, signOut,
+      signInWithEmail, signUpWithEmail, signInWithGoogle, signOut, markCodeVerified,
     }}>
       {children}
     </AuthContext.Provider>

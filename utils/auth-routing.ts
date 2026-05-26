@@ -29,8 +29,12 @@ export function getAuthRedirectTarget(profile: AuthProfileLike | null): string |
       if (profile.role === 'teacher') {
         return '/select-class';
       }
-      // Parents and accountants go to their dashboards
-      return null;
+      if (profile.role === 'parent') {
+        return '/(parent)';
+      }
+      if (profile.role === 'accountant') {
+        return '/(accountant)';
+      }
     }
     return '/enter-code';
   }
