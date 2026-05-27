@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Tabs } from 'expo-router';
-import { StyleSheet, View } from 'react-native';
+import { Platform, StyleSheet, View } from 'react-native';
 import { AppColors, AppShadows } from '../../constants/theme';
 
 export default function DashboardLayout() {
@@ -9,8 +9,8 @@ export default function DashboardLayout() {
       screenOptions={{
         headerShown: false,
         tabBarStyle: styles.tabBar,
-        tabBarActiveTintColor: AppColors.primaryBlue,
-        tabBarInactiveTintColor: AppColors.textTertiary,
+        tabBarActiveTintColor: AppColors.white,
+        tabBarInactiveTintColor: AppColors.textSecondary,
         tabBarShowLabel: false,
       }}
     >
@@ -21,9 +21,9 @@ export default function DashboardLayout() {
           tabBarIcon: ({ color, focused }) => (
             <View style={[styles.iconContainer, focused && styles.iconContainerActive]}>
               <Ionicons 
-                name={focused ? 'grid' : 'grid-outline'} 
-                size={focused ? 28 : 24} 
-                color={color} 
+                name={focused ? 'home' : 'home-outline'} 
+                size={24} 
+                color={focused ? AppColors.white : color} 
               />
             </View>
           ),
@@ -37,7 +37,7 @@ export default function DashboardLayout() {
             <View style={[styles.iconContainer, focused && styles.iconContainerActive]}>
               <Ionicons 
                 name={focused ? 'school' : 'school-outline'} 
-                size={focused ? 28 : 24} 
+                size={24} 
                 color={focused ? AppColors.white : color} 
               />
             </View>
@@ -51,9 +51,9 @@ export default function DashboardLayout() {
           tabBarIcon: ({ color, focused }) => (
             <View style={[styles.iconContainer, focused && styles.iconContainerActive]}>
               <Ionicons 
-                name={focused ? 'people' : 'people-outline'} 
-                size={focused ? 28 : 24} 
-                color={color} 
+                name={focused ? 'wallet' : 'wallet-outline'} 
+                size={24} 
+                color={focused ? AppColors.white : color} 
               />
             </View>
           ),
@@ -66,12 +66,19 @@ export default function DashboardLayout() {
           tabBarIcon: ({ color, focused }) => (
             <View style={[styles.iconContainer, focused && styles.iconContainerActive]}>
               <Ionicons 
-                name={focused ? 'settings' : 'settings-outline'} 
-                size={focused ? 28 : 24} 
-                color={color} 
+                name={focused ? 'menu' : 'menu-outline'} 
+                size={24} 
+                color={focused ? AppColors.white : color} 
               />
             </View>
           ),
+        }}
+      />
+      {/* Hide student-profile from tab bar */}
+      <Tabs.Screen
+        name="student-profile"
+        options={{
+          href: null,
         }}
       />
     </Tabs>
@@ -80,25 +87,34 @@ export default function DashboardLayout() {
 
 const styles = StyleSheet.create({
   tabBar: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
     backgroundColor: AppColors.white,
     borderTopWidth: 0,
-    ...AppShadows.elevatedShadow,
-    height: 80,
-    paddingBottom: 16,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    height: Platform.OS === 'ios' ? 88 : 68,
+    paddingBottom: Platform.OS === 'ios' ? 24 : 12,
     paddingTop: 12,
+    paddingHorizontal: 16,
+    ...AppShadows.elevatedShadow,
   },
   iconContainer: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
+    width: 52,
+    height: 52,
+    borderRadius: 26,
     justifyContent: 'center',
     alignItems: 'center',
+    transition: 'all 0.3s ease',
   },
   iconContainerActive: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
     backgroundColor: AppColors.primaryBlue,
-    ...AppShadows.goldGlow,
+    shadowColor: AppColors.primaryBlue,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
   },
 });
