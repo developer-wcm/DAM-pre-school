@@ -14,6 +14,7 @@ import {
     TouchableOpacity,
     View,
 } from 'react-native';
+import { DEFAULT_SCHOOL_ID, DEFAULT_SCHOOL_NAME } from '../constants/school';
 import { useAuth } from '../context/auth';
 
 function getPasswordStrength(password: string) {
@@ -29,6 +30,8 @@ export default function SignUpScreen() {
   const router = useRouter();
   const { role, schoolId, schoolName } = useLocalSearchParams<{ role: string; schoolId: string; schoolName: string }>();
   const { signUpWithEmail, signInWithGoogle } = useAuth();
+  const resolvedSchoolId = schoolId ?? DEFAULT_SCHOOL_ID;
+  const resolvedSchoolName = schoolName ?? DEFAULT_SCHOOL_NAME;
 
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
@@ -56,7 +59,7 @@ export default function SignUpScreen() {
     }
     setLoading(true);
     const { error } = await signUpWithEmail(
-      email.trim(), password, fullName.trim(), role ?? 'parent', schoolId
+      email.trim(), password, fullName.trim(), role ?? 'parent', resolvedSchoolId
     );
     setLoading(false);
     if (error) { 
@@ -88,10 +91,10 @@ export default function SignUpScreen() {
           <View style={styles.pageHeader}>
             <Text style={styles.pageTitle}>Create Account</Text>
             <Text style={styles.pageSubtitle}>Join DMA PreSchool</Text>
-            {schoolName ? (
+            {resolvedSchoolName ? (
               <View style={styles.schoolBadge}>
                 <Ionicons name="business-outline" size={14} color="#7B6FE8" />
-                <Text style={styles.schoolBadgeText}>{schoolName}</Text>
+                <Text style={styles.schoolBadgeText}>{resolvedSchoolName}</Text>
                 {role === 'teacher' && (
                   <View style={styles.teacherTag}>
                     <Text style={styles.teacherTagText}>Teacher</Text>

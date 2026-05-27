@@ -25,25 +25,25 @@ export default function AdmissionChoiceScreen() {
           </View>
           <Text style={styles.title}>Choose Your Path</Text>
           <Text style={styles.subtitle}>
-            Are you an existing parent with a school code, or applying for new admission?
+            Are you signing in or applying for new admission?
           </Text>
         </View>
 
         {/* Choice Cards */}
         <View style={styles.choiceContainer}>
-          {/* Enter School Code */}
+          {/* School Access */}
           <TouchableOpacity
             style={styles.choiceCard}
-            onPress={() => router.push('/find-school')}
+            onPress={() => router.push('/role-selection')}
             activeOpacity={0.8}
           >
             <View style={[styles.choiceIcon, { backgroundColor: COLORS.successLight }]}>
-              <Ionicons name="keypad" size={28} color={COLORS.success} />
+              <Ionicons name="people-outline" size={28} color={COLORS.success} />
             </View>
             <View style={styles.choiceContent}>
-              <Text style={styles.choiceTitle}>Enter School Code</Text>
+              <Text style={styles.choiceTitle}>School Access</Text>
               <Text style={styles.choiceDescription}>
-                I have a 6-digit school code from the administration
+                Log in or create an account for DMA PreSchool
               </Text>
             </View>
             <View style={styles.choiceArrow}>

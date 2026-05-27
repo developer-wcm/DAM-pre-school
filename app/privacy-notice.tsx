@@ -247,7 +247,7 @@ export default function PrivacyNoticeScreen() {
 
             <TouchableOpacity
               activeOpacity={0.85}
-              onPress={() => consentChecked && router.push('/account-pending')}
+              onPress={() => consentChecked && router.push('/role-selection')}
               disabled={!consentChecked}
               style={styles.nextButtonWrapper}
             >

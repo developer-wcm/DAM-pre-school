@@ -3,6 +3,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { COLORS } from '../constants/admissionTheme';
+import { DEFAULT_SCHOOL_ID, DEFAULT_SCHOOL_NAME } from '../constants/school';
 
 const ROLE_LABELS: Record<string, string> = {
   teacher: 'School Staff',
@@ -21,6 +22,7 @@ const ROLE_ICONS: Record<string, { name: any; bg: string; color: string }> = {
 export default function AuthChoiceScreen() {
   const router = useRouter();
   const { role, schoolId } = useLocalSearchParams<{ role: string; schoolId?: string }>();
+  const resolvedSchoolId = schoolId ?? DEFAULT_SCHOOL_ID;
 
   const icon = ROLE_ICONS[role ?? 'parent'];
   const label = ROLE_LABELS[role ?? 'parent'];
@@ -51,7 +53,7 @@ export default function AuthChoiceScreen() {
         <TouchableOpacity
           style={styles.primaryCard}
           activeOpacity={0.85}
-          onPress={() => router.push({ pathname: '/login', params: { role, schoolId } })}
+          onPress={() => router.push('/login')}
         >
           <LinearGradient
             colors={[COLORS.primary, COLORS.primaryLight]}
@@ -70,11 +72,20 @@ export default function AuthChoiceScreen() {
         </TouchableOpacity>
 
         {/* Create Account */}
-        <TouchableOpacity
-          style={styles.secondaryCard}
-          activeOpacity={0.85}
-          onPress={() => router.push({ pathname: '/find-school', params: { role, schoolId } })}
-        >
+          <TouchableOpacity
+            style={styles.secondaryCard}
+            activeOpacity={0.85}
+            onPress={() =>
+              router.push({
+                pathname: '/sign-up',
+                params: {
+                  role,
+                  schoolId: resolvedSchoolId,
+                  schoolName: DEFAULT_SCHOOL_NAME,
+                },
+              })
+            }
+          >
           <View style={[styles.cardIconCircle, { backgroundColor: COLORS.primarySoft }]}>
             <Ionicons name="person-add-outline" size={26} color={COLORS.primary} />
           </View>

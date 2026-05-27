@@ -26,7 +26,6 @@ export default function AccountPendingScreen() {
 
   const [checking, setChecking] = useState(false);
   const [schoolName, setSchoolName] = useState('Your School');
-  const [schoolIdLabel, setSchoolIdLabel] = useState<string | null>(null);
 
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const scaleAnim = useRef(new Animated.Value(0.8)).current;
@@ -164,11 +163,8 @@ export default function AccountPendingScreen() {
 
         if (!schoolId) {
           setSchoolName('Your School');
-          setSchoolIdLabel(null);
           return;
         }
-
-        setSchoolIdLabel(schoolId);
 
         // Search using join code
         const { data: joinData } = await supabase
@@ -229,12 +225,6 @@ export default function AccountPendingScreen() {
             <Text style={styles.schoolName}>
               {schoolName.toUpperCase()}
             </Text>
-
-            {schoolIdLabel ? (
-              <Text style={styles.schoolIdText}>
-                School ID: {schoolIdLabel}
-              </Text>
-            ) : null}
 
             {/* LOGO */}
             <Animated.View

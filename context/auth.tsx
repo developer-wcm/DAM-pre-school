@@ -2,6 +2,7 @@ import { Session, User } from '@supabase/supabase-js';
 import { useRouter, useSegments } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
 import { createContext, useContext, useEffect, useState } from 'react';
+import { DEFAULT_SCHOOL_ID } from '../constants/school';
 import { supabase } from '../lib/supabase';
 import { getAuthRedirectTarget } from '../utils/auth-routing';
 
@@ -208,11 +209,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     role: string,
     schoolId?: string
   ): Promise<{ error: string | null }> {
+    const resolvedSchoolId = schoolId ?? DEFAULT_SCHOOL_ID;
+
     const { data, error } = await supabase.auth.signUp({
       email,
       password,
       options: {
-        data: { full_name: fullName, role, school_id: schoolId ?? null },
+        data: { full_name: fullName, role, school_id: resolvedSchoolId },
       },
     });
     if (error) return { error: error.message };

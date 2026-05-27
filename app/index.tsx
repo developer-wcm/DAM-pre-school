@@ -45,7 +45,7 @@ export default function WelcomeScreen() {
       <View style={styles.bottomSection}>
         <TouchableOpacity
           style={styles.getStartedButton}
-          onPress={() => router.push('/role-selection')}
+          onPress={() => router.push('/privacy-notice')}
           activeOpacity={0.85}
         >
           <LinearGradient
