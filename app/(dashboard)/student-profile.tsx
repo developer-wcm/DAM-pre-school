@@ -9,6 +9,7 @@ import {
     TouchableOpacity,
     View,
 } from 'react-native';
+import EditStudentModal from '../../components/EditStudentModal';
 import { getProgressLevelDetails, getSkillsForClass } from '../../constants/progressSkills';
 import { AppColors, AppShadows } from '../../constants/theme';
 import { supabase } from '../../lib/supabase';
@@ -55,6 +56,7 @@ export default function StudentProfileScreen() {
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'info' | 'attendance' | 'fees' | 'progress'>('info');
   const [selectedTerm, setSelectedTerm] = useState<1 | 2 | 3>(1);
+  const [editModalVisible, setEditModalVisible] = useState(false);
 
   useEffect(() => {
     fetchStudentProfile();
@@ -109,7 +111,11 @@ export default function StudentProfileScreen() {
           <Ionicons name="chevron-back" size={24} color={AppColors.primaryBlue} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>STUDENT PROFILE</Text>
-        <TouchableOpacity style={styles.editBtn} activeOpacity={0.7}>
+        <TouchableOpacity 
+          style={styles.editBtn} 
+          activeOpacity={0.7}
+          onPress={() => setEditModalVisible(true)}
+        >
           <Ionicons name="create-outline" size={24} color={AppColors.primaryBlue} />
         </TouchableOpacity>
       </View>
@@ -515,6 +521,14 @@ export default function StudentProfileScreen() {
 
         <View style={{ height: 40 }} />
       </ScrollView>
+
+      {/* Edit Modal */}
+      <EditStudentModal
+        visible={editModalVisible}
+        student={student}
+        onClose={() => setEditModalVisible(false)}
+        onSuccess={fetchStudentProfile}
+      />
     </View>
   );
 }
