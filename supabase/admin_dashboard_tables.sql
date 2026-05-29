@@ -36,7 +36,7 @@ CREATE TABLE IF NOT EXISTS attendance (
   school_id TEXT NOT NULL REFERENCES schools(join_code) ON DELETE CASCADE,
   student_id UUID NOT NULL REFERENCES students(id) ON DELETE CASCADE,
   date DATE NOT NULL DEFAULT CURRENT_DATE,
-  status TEXT NOT NULL CHECK (status IN ('present', 'absent', 'late', 'half-day', 'sick-leave', 'excused')),
+  status TEXT NOT NULL CHECK (status IN ('present', 'absent', 'late', 'half-day', 'sick-leave', 'excused', 'holiday')),
   marked_by UUID REFERENCES profiles(id) ON DELETE SET NULL,
   notes TEXT,
   created_at TIMESTAMPTZ DEFAULT NOW(),
@@ -339,6 +339,40 @@ CREATE POLICY "Teachers/Admin can mark attendance"
       WHERE id = auth.uid() 
       AND school_id = attendance.school_id
       AND role IN ('admin', 'principal', 'teacher')
+      AND approved = true
+    )
+  );
+
+CREATE POLICY "Teachers/Admin can update attendance"
+  ON attendance FOR UPDATE
+  USING (
+    EXISTS (
+      SELECT 1 FROM profiles 
+      WHERE id = auth.uid() 
+      AND school_id = attendance.school_id
+      AND role IN ('admin', 'principal', 'teacher')
+      AND approved = true
+    )
+  )
+  WITH CHECK (
+    EXISTS (
+      SELECT 1 FROM profiles 
+      WHERE id = auth.uid() 
+      AND school_id = attendance.school_id
+      AND role IN ('admin', 'principal', 'teacher')
+      AND approved = true
+    )
+  );
+
+CREATE POLICY "Teachers/Admin can delete attendance"
+  ON attendance FOR DELETE
+  USING (
+    EXISTS (
+      SELECT 1 FROM profiles 
+      WHERE id = auth.uid() 
+      AND school_id = attendance.school_id
+      AND role IN ('admin', 'principal', 'teacher')
+      AND approved = true
     )
   );
 

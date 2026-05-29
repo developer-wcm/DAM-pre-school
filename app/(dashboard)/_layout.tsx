@@ -9,9 +9,10 @@ export default function DashboardLayout() {
       screenOptions={{
         headerShown: false,
         tabBarStyle: styles.tabBar,
-        tabBarActiveTintColor: AppColors.white,
+        tabBarActiveTintColor: '#4F46E5',
         tabBarInactiveTintColor: AppColors.textSecondary,
-        tabBarShowLabel: false,
+        tabBarShowLabel: true,
+        tabBarLabelStyle: styles.tabLabel,
       }}
     >
       <Tabs.Screen
@@ -20,25 +21,10 @@ export default function DashboardLayout() {
           title: 'Home',
           tabBarIcon: ({ color, focused }) => (
             <View style={[styles.iconContainer, focused && styles.iconContainerActive]}>
-              <Ionicons 
-                name={focused ? 'home' : 'home-outline'} 
-                size={24} 
-                color={focused ? AppColors.white : color} 
-              />
-            </View>
-          ),
-        }}
-      />
-      <Tabs.Screen
-        name="students"
-        options={{
-          title: 'Students',
-          tabBarIcon: ({ color, focused }) => (
-            <View style={[styles.iconContainer, focused && styles.iconContainerActive]}>
-              <Ionicons 
-                name={focused ? 'school' : 'school-outline'} 
-                size={24} 
-                color={focused ? AppColors.white : color} 
+              <Ionicons
+                name={focused ? 'grid' : 'grid-outline'}
+                size={22}
+                color={focused ? '#4F46E5' : color}
               />
             </View>
           ),
@@ -50,10 +36,25 @@ export default function DashboardLayout() {
           title: 'Fees',
           tabBarIcon: ({ color, focused }) => (
             <View style={[styles.iconContainer, focused && styles.iconContainerActive]}>
-              <Ionicons 
-                name={focused ? 'wallet' : 'wallet-outline'} 
-                size={24} 
-                color={focused ? AppColors.white : color} 
+              <Ionicons
+                name={focused ? 'wallet' : 'wallet-outline'}
+                size={22}
+                color={focused ? '#4F46E5' : color}
+              />
+            </View>
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="students"
+        options={{
+          title: 'Students',
+          tabBarIcon: ({ color, focused }) => (
+            <View style={[styles.iconContainer, focused && styles.iconContainerActive]}>
+              <Ionicons
+                name={focused ? 'school' : 'school-outline'}
+                size={22}
+                color={focused ? '#4F46E5' : color}
               />
             </View>
           ),
@@ -74,9 +75,22 @@ export default function DashboardLayout() {
           ),
         }}
       />
-      {/* Hide student-profile from tab bar */}
+      {/* Hide stack screens from tab bar */}
       <Tabs.Screen
         name="student-profile"
+        options={{
+          href: null,
+        }}
+      />
+      <Tabs.Screen
+        name="attendance"
+        options={{
+          href: null,
+          tabBarStyle: { display: 'none' },
+        }}
+      />
+      <Tabs.Screen
+        name="fee"
         options={{
           href: null,
         }}
@@ -110,11 +124,12 @@ const styles = StyleSheet.create({
     transition: 'all 0.3s ease',
   },
   iconContainerActive: {
-    backgroundColor: AppColors.primaryBlue,
-    shadowColor: AppColors.primaryBlue,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 8,
+    backgroundColor: '#EEF2FF',
+  },
+  tabLabel: {
+    fontSize: 11,
+    fontWeight: '600',
+    marginTop: 2,
+    marginBottom: 0,
   },
 });

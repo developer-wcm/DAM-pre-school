@@ -1,5 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
     ActivityIndicator,
@@ -14,6 +15,7 @@ import {
     View
 } from 'react-native';
 import { useAuth } from '../../context/auth';
+import { presentWeightForStatus } from '../../lib/attendance';
 import { supabase } from '../../lib/supabase';
 
 interface DashboardStats {
@@ -81,6 +83,7 @@ function timeAgo(dateStr: string) {
 
 export default function AdminDashboardScreen() {
   const { profile } = useAuth();
+  const router = useRouter();
 
   const [stats, setStats] = useState<DashboardStats>({
     totalStudents: 0, classCounts: [], presentToday: 0,
@@ -147,7 +150,10 @@ export default function AdminDashboardScreen() {
       students.forEach((s) => { if (s.class) classCounts[s.class] = (classCounts[s.class] || 0) + 1; });
 
       const todayAttendance = attendanceRes.data ?? [];
-      const presentToday = todayAttendance.filter((a) => a.status === 'present').length;
+      const presentToday = todayAttendance.reduce(
+        (sum, record) => sum + presentWeightForStatus(record.status),
+        0
+      );
 
       const pendingFees = feesRes.data ?? [];
       const pendingAmount = pendingFees.reduce((sum, f) => sum + Number(f.amount), 0);
@@ -386,7 +392,11 @@ export default function AdminDashboardScreen() {
               )}
             </View>
 
-            <View style={[styles.statCard, { backgroundColor: '#D4F4E8' }]}>
+            <TouchableOpacity
+              style={[styles.statCard, { backgroundColor: '#D4F4E8' }]}
+              activeOpacity={0.7}
+              onPress={() => router.push('/(dashboard)/attendance')}
+            >
               <View style={styles.statHeader}>
                 <View style={[styles.statIconBox, { backgroundColor: '#A8E8CC' }]}>
                   <Ionicons name="checkmark-done-outline" size={16} color="#1A7A4A" />
@@ -401,7 +411,7 @@ export default function AdminDashboardScreen() {
                   ? `${stats.presentToday} present / ${stats.totalStudents} total`
                   : 'No attendance marked'}
               </Text>
-            </View>
+            </TouchableOpacity>
 
             <View style={[styles.statCard, { backgroundColor: '#FFF0D4' }]}>
               <View style={styles.statHeader}>
@@ -458,6 +468,8 @@ export default function AdminDashboardScreen() {
                   onPress={() => {
                     if (action.id === 'pending') {
                       setShowPendingModal(true);
+                    } else if (action.id === 'attendance') {
+                      router.push('/(dashboard)/attendance');
                     }
                   }}
                 >

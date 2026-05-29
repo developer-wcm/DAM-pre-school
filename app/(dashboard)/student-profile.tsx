@@ -1,17 +1,36 @@
 import { Ionicons } from '@expo/vector-icons';
+import { useFocusEffect } from '@react-navigation/native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
     ActivityIndicator,
+    Alert,
+    Modal,
     ScrollView,
     StyleSheet,
     Text,
+    TextInput,
     TouchableOpacity,
     View,
 } from 'react-native';
 import EditStudentModal from '../../components/EditStudentModal';
-import { getProgressLevelDetails, getSkillsForClass } from '../../constants/progressSkills';
+import { getProgressLevelDetails, getSkillsForClass, SKILL_LEVELS, type Skill, type SkillLevel } from '../../constants/progressSkills';
 import { AppColors, AppShadows } from '../../constants/theme';
+import { useAuth } from '../../context/auth';
+import { loadStudentProgress, mergeSkillsWithSaved, saveStudentProgress } from '../../lib/progress';
+import {
+  addMonths,
+  AttendanceRecordStatus,
+  buildCalendarDays,
+  CalendarDay,
+  fetchStudentAttendanceMonth,
+  getCalendarLeadingBlanks,
+  getMonthLabel,
+  getMonthStart,
+  mapFriendlyAttendanceError,
+  metricsFromCalendarMonth,
+  saveStudentAttendanceMonth,
+} from '../../lib/attendance';
 import { supabase } from '../../lib/supabase';
 
 interface StudentProfile {
@@ -23,6 +42,33 @@ interface StudentProfile {
   gender: string | null;
   status: string;
   admission_date: string | null;
+  school_id?: string | null;
+}
+
+type ProfileTab = 'info' | 'attendance' | 'fees' | 'progress';
+type AttendanceStatus = 'present' | 'absent' | 'late' | 'holiday';
+type AttendanceDay = CalendarDay;
+
+interface AttendanceSummary {
+  presentPct: string;
+  absentPct: string;
+  workingDays: string;
+  month: string;
+  noteTitle: string;
+  noteDate: string;
+  noteText: string;
+}
+
+function emptyAttendanceSummary(month: Date): AttendanceSummary {
+  return {
+    presentPct: '0',
+    absentPct: '0',
+    workingDays: '0',
+    month: getMonthLabel(month),
+    noteTitle: '',
+    noteDate: '',
+    noteText: '',
+  };
 }
 
 const CLASS_COLORS: Record<string, { bg: string; text: string }> = {
@@ -47,20 +93,167 @@ function formatDate(dateStr: string | null): string {
   return date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
 }
 
+function getDayCellStyle(status: AttendanceDay['status']) {
+  switch (status) {
+    case 'present':
+      return styles.dayPresent;
+    case 'absent':
+      return styles.dayAbsent;
+    case 'holiday':
+      return styles.dayHoliday;
+    case 'late':
+      return styles.dayLate;
+    default:
+      return undefined;
+  }
+}
+
+function getDayTextStyle(status: AttendanceDay['status'], isToday: boolean) {
+  if (isToday) {
+    return styles.dayTextToday;
+  }
+
+  if (status === 'future') {
+    return styles.dayTextFuture;
+  }
+
+  if (status === 'inactive') {
+    return styles.dayTextInactive;
+  }
+
+  return styles.dayText;
+}
+
+function getAttendanceCalendarWeeks(month: Date, days: AttendanceDay[]) {
+  const leadingBlanks = getCalendarLeadingBlanks(month);
+  const cells: (AttendanceDay | null)[] = [
+    ...Array.from({ length: leadingBlanks }, () => null),
+    ...days,
+  ];
+
+  while (cells.length % 7 !== 0) {
+    cells.push(null);
+  }
+
+  const weeks: (AttendanceDay | null)[][] = [];
+  for (let index = 0; index < cells.length; index += 7) {
+    weeks.push(cells.slice(index, index + 7));
+  }
+
+  return weeks;
+}
+
 export default function StudentProfileScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
   const studentId = params.id as string;
+  const { profile } = useAuth();
 
   const [student, setStudent] = useState<StudentProfile | null>(null);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'info' | 'attendance' | 'fees' | 'progress'>('info');
+  const [activeTab, setActiveTab] = useState<ProfileTab>('info');
   const [selectedTerm, setSelectedTerm] = useState<1 | 2 | 3>(1);
   const [editModalVisible, setEditModalVisible] = useState(false);
+  const [attendanceEditVisible, setAttendanceEditVisible] = useState(false);
+  const [progressEditVisible, setProgressEditVisible] = useState(false);
+  const [notesModalSkill, setNotesModalSkill] = useState<Skill | null>(null);
+  const [progressSaving, setProgressSaving] = useState(false);
+  const [attendanceMonth, setAttendanceMonth] = useState(() => getMonthStart(new Date()));
+  const [attendanceSummary, setAttendanceSummary] = useState<AttendanceSummary>(() =>
+    emptyAttendanceSummary(getMonthStart(new Date()))
+  );
+  const [attendanceDays, setAttendanceDays] = useState<AttendanceDay[]>([]);
+  const [attendanceLoading, setAttendanceLoading] = useState(false);
+  const [attendanceSaveMessage, setAttendanceSaveMessage] = useState<string | null>(null);
+  const [progressSkills, setProgressSkills] = useState<Skill[]>([]);
+  const todayDayNumber = useMemo(() => new Date().getDate(), []);
+  const isViewingCurrentMonth = useMemo(() => {
+    const now = new Date();
+    return (
+      attendanceMonth.getMonth() === now.getMonth() &&
+      attendanceMonth.getFullYear() === now.getFullYear()
+    );
+  }, [attendanceMonth]);
 
   useEffect(() => {
     fetchStudentProfile();
   }, [studentId]);
+
+  const loadProgressSkills = useCallback(async () => {
+    if (!student?.class || !studentId) return;
+
+    const defaults = getSkillsForClass(student.class).map((skill) => ({ ...skill }));
+    try {
+      const saved = await loadStudentProgress(studentId, selectedTerm);
+      setProgressSkills(mergeSkillsWithSaved(defaults, saved));
+    } catch {
+      setProgressSkills(defaults);
+    }
+  }, [selectedTerm, student?.class, studentId]);
+
+  useEffect(() => {
+    if (student?.class) {
+      loadProgressSkills();
+    }
+  }, [loadProgressSkills, student?.class]);
+
+  useEffect(() => {
+    if (activeTab === 'progress' && student?.class) {
+      loadProgressSkills();
+    }
+  }, [activeTab, loadProgressSkills, student?.class]);
+
+  const loadAttendanceMonth = useCallback(async () => {
+    if (!student?.school_id || !studentId) return;
+
+    setAttendanceLoading(true);
+    const { rows, error } = await fetchStudentAttendanceMonth(
+      student.school_id,
+      studentId,
+      attendanceMonth
+    );
+    setAttendanceLoading(false);
+
+    if (error) {
+      Alert.alert('Could not load attendance', mapFriendlyAttendanceError(error));
+      return;
+    }
+
+    const recordsByDate = new Map<string, AttendanceRecordStatus>();
+    let latestNote = '';
+    rows.forEach((row) => {
+      recordsByDate.set(row.date, row.status);
+      if (row.notes) latestNote = row.notes;
+    });
+
+    const days = buildCalendarDays(attendanceMonth, recordsByDate);
+    const metrics = metricsFromCalendarMonth(attendanceMonth, days);
+
+    setAttendanceDays(days);
+    setAttendanceSummary({
+      presentPct: `${metrics.presentPct}`,
+      absentPct: `${metrics.absentPct}`,
+      workingDays: `${metrics.workingDays}`,
+      month: getMonthLabel(attendanceMonth),
+      noteTitle: metrics.lateCount > 0 ? 'Late marks' : 'Attendance note',
+      noteDate: getMonthLabel(attendanceMonth),
+      noteText: latestNote,
+    });
+  }, [attendanceMonth, student?.school_id, studentId]);
+
+  useEffect(() => {
+    if (activeTab === 'attendance' && student?.school_id) {
+      loadAttendanceMonth();
+    }
+  }, [activeTab, loadAttendanceMonth, student?.school_id]);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (activeTab === 'attendance' && student?.school_id) {
+        loadAttendanceMonth();
+      }
+    }, [activeTab, loadAttendanceMonth, student?.school_id])
+  );
 
   async function fetchStudentProfile() {
     try {
@@ -77,6 +270,89 @@ export default function StudentProfileScreen() {
     } finally {
       setLoading(false);
     }
+  }
+
+  function handleEditPress() {
+    if (activeTab === 'attendance') {
+      setAttendanceEditVisible(true);
+      return;
+    }
+
+    if (activeTab === 'progress') {
+      setProgressEditVisible(true);
+      return;
+    }
+
+    setEditModalVisible(true);
+  }
+
+  async function handleSaveAttendance(
+    nextSummary: AttendanceSummary,
+    nextDays: AttendanceDay[]
+  ): Promise<{ ok: boolean; message?: string }> {
+    if (!student?.school_id || !profile?.id) {
+      return { ok: false, message: 'Missing school or user session.' };
+    }
+
+    const metrics = metricsFromCalendarMonth(attendanceMonth, nextDays);
+    const summaryWithMetrics: AttendanceSummary = {
+      ...nextSummary,
+      presentPct: `${metrics.presentPct}`,
+      absentPct: `${metrics.absentPct}`,
+      workingDays: `${metrics.workingDays}`,
+      month: getMonthLabel(attendanceMonth),
+    };
+
+    const { error } = await saveStudentAttendanceMonth({
+      schoolId: student.school_id,
+      studentId: student.id,
+      month: attendanceMonth,
+      days: nextDays,
+      markedBy: profile.id,
+      noteText: nextSummary.noteText,
+    });
+
+    if (error) {
+      return { ok: false, message: mapFriendlyAttendanceError(error) };
+    }
+
+    setAttendanceSummary(summaryWithMetrics);
+    setAttendanceDays(nextDays);
+    setAttendanceSaveMessage('Attendance saved successfully.');
+    setTimeout(() => setAttendanceSaveMessage(null), 3500);
+    await loadAttendanceMonth();
+    return { ok: true };
+  }
+
+  function shiftAttendanceMonth(delta: number) {
+    setAttendanceMonth((current) => addMonths(current, delta));
+  }
+
+  async function handleSaveProgress(nextSkills: Skill[]) {
+    setProgressSaving(true);
+    try {
+      setProgressSkills(nextSkills);
+      await saveStudentProgress(studentId, selectedTerm, nextSkills);
+      setProgressEditVisible(false);
+      if (notesModalSkill) {
+        const updated = nextSkills.find((skill) => skill.id === notesModalSkill.id);
+        if (updated) setNotesModalSkill(updated);
+      }
+      Alert.alert('Saved', 'Progress details updated.');
+    } catch {
+      Alert.alert('Could not save', 'Progress could not be saved on this device. Please try again.');
+    } finally {
+      setProgressSaving(false);
+    }
+  }
+
+  function openNotesForSkill(skill: Skill) {
+    setNotesModalSkill(skill);
+  }
+
+  function openEditNotesFromViewer() {
+    setNotesModalSkill(null);
+    setProgressEditVisible(true);
   }
 
   if (loading) {
@@ -105,7 +381,7 @@ export default function StudentProfileScreen() {
       <View style={styles.header}>
         <TouchableOpacity
           style={styles.backBtn}
-          onPress={() => router.back()}
+          onPress={() => router.replace('/(dashboard)/students')}
           activeOpacity={0.7}
         >
           <Ionicons name="chevron-back" size={24} color={AppColors.primaryBlue} />
@@ -114,7 +390,7 @@ export default function StudentProfileScreen() {
         <TouchableOpacity 
           style={styles.editBtn} 
           activeOpacity={0.7}
-          onPress={() => setEditModalVisible(true)}
+          onPress={handleEditPress}
         >
           <Ionicons name="create-outline" size={24} color={AppColors.primaryBlue} />
         </TouchableOpacity>
@@ -245,18 +521,29 @@ export default function StudentProfileScreen() {
 
         {activeTab === 'attendance' && (
           <View style={styles.attendanceContainer}>
+            {attendanceSaveMessage ? (
+              <View style={styles.saveToast}>
+                <Ionicons name="checkmark-circle" size={18} color="#2A9D6E" />
+                <Text style={styles.saveToastText}>{attendanceSaveMessage}</Text>
+              </View>
+            ) : null}
+
+            {attendanceLoading ? (
+              <ActivityIndicator size="small" color={AppColors.primaryBlue} style={{ marginBottom: 12 }} />
+            ) : null}
+
             {/* Stats Cards */}
             <View style={styles.statsRow}>
               <View style={[styles.statCard, { backgroundColor: '#D4F4E8' }]}>
-                <Text style={[styles.statValue, { color: '#2A9D6E' }]}>85%</Text>
+                <Text style={[styles.statValue, { color: '#2A9D6E' }]}>{attendanceSummary.presentPct}%</Text>
                 <Text style={styles.statLabel}>Present</Text>
               </View>
               <View style={[styles.statCard, { backgroundColor: '#FFE4E4' }]}>
-                <Text style={[styles.statValue, { color: '#E05A5A' }]}>10%</Text>
+                <Text style={[styles.statValue, { color: '#E05A5A' }]}>{attendanceSummary.absentPct}%</Text>
                 <Text style={styles.statLabel}>Absent</Text>
               </View>
               <View style={[styles.statCard, { backgroundColor: AppColors.blueLight }]}>
-                <Text style={[styles.statValue, { color: AppColors.primaryBlue }]}>20</Text>
+                <Text style={[styles.statValue, { color: AppColors.primaryBlue }]}>{attendanceSummary.workingDays}</Text>
                 <Text style={styles.statLabel}>Working Days</Text>
               </View>
             </View>
@@ -264,11 +551,19 @@ export default function StudentProfileScreen() {
             {/* Calendar */}
             <View style={styles.calendarCard}>
               <View style={styles.calendarHeader}>
-                <TouchableOpacity style={styles.calendarArrow} activeOpacity={0.7}>
+                <TouchableOpacity
+                  style={styles.calendarArrow}
+                  activeOpacity={0.7}
+                  onPress={() => shiftAttendanceMonth(-1)}
+                >
                   <Ionicons name="chevron-back" size={20} color={AppColors.textSecondary} />
                 </TouchableOpacity>
-                <Text style={styles.calendarMonth}>January 2026</Text>
-                <TouchableOpacity style={styles.calendarArrow} activeOpacity={0.7}>
+                <Text style={styles.calendarMonth}>{attendanceSummary.month}</Text>
+                <TouchableOpacity
+                  style={styles.calendarArrow}
+                  activeOpacity={0.7}
+                  onPress={() => shiftAttendanceMonth(1)}
+                >
                   <Ionicons name="chevron-forward" size={20} color={AppColors.textSecondary} />
                 </TouchableOpacity>
               </View>
@@ -282,118 +577,26 @@ export default function StudentProfileScreen() {
                   ))}
                 </View>
 
-                {/* Calendar Days - Sample for January 2026 */}
-                <View style={styles.calendarRow}>
-                  <View style={styles.dayCell} />
-                  <View style={styles.dayCell} />
-                  <View style={styles.dayCell} />
-                  <View style={styles.dayCell} />
-                  <View style={[styles.dayCell, styles.dayPresent]}>
-                    <Text style={styles.dayText}>1</Text>
+                {getAttendanceCalendarWeeks(attendanceMonth, attendanceDays).map((week, weekIndex) => (
+                  <View key={weekIndex} style={styles.calendarRow}>
+                    {week.map((day, dayIndex) => (
+                      day ? (
+                        <View key={day.day} style={[styles.dayCell, getDayCellStyle(day.status)]}>
+                          <Text
+                            style={getDayTextStyle(
+                              day.status,
+                              isViewingCurrentMonth && day.day === todayDayNumber
+                            )}
+                          >
+                            {day.day}
+                          </Text>
+                        </View>
+                      ) : (
+                        <View key={`blank-${weekIndex}-${dayIndex}`} style={styles.dayCell} />
+                      )
+                    ))}
                   </View>
-                  <View style={[styles.dayCell, styles.dayPresent]}>
-                    <Text style={styles.dayText}>2</Text>
-                  </View>
-                  <View style={styles.dayCell}>
-                    <Text style={styles.dayTextInactive}>3</Text>
-                  </View>
-                </View>
-
-                <View style={styles.calendarRow}>
-                  <View style={styles.dayCell}>
-                    <Text style={styles.dayTextInactive}>4</Text>
-                  </View>
-                  <View style={[styles.dayCell, styles.dayPresent]}>
-                    <Text style={styles.dayText}>5</Text>
-                  </View>
-                  <View style={[styles.dayCell, styles.dayPresent]}>
-                    <Text style={styles.dayText}>6</Text>
-                  </View>
-                  <View style={[styles.dayCell, styles.dayPresent]}>
-                    <Text style={styles.dayText}>7</Text>
-                  </View>
-                  <View style={[styles.dayCell, styles.dayPresent]}>
-                    <Text style={styles.dayText}>8</Text>
-                  </View>
-                  <View style={[styles.dayCell, styles.dayPresent]}>
-                    <Text style={styles.dayText}>9</Text>
-                  </View>
-                  <View style={styles.dayCell}>
-                    <Text style={styles.dayTextInactive}>10</Text>
-                  </View>
-                </View>
-
-                <View style={styles.calendarRow}>
-                  <View style={styles.dayCell}>
-                    <Text style={styles.dayTextInactive}>11</Text>
-                  </View>
-                  <View style={[styles.dayCell, styles.dayPresent]}>
-                    <Text style={styles.dayText}>12</Text>
-                  </View>
-                  <View style={[styles.dayCell, styles.dayPresent]}>
-                    <Text style={styles.dayText}>13</Text>
-                  </View>
-                  <View style={[styles.dayCell, styles.dayHoliday]}>
-                    <Text style={styles.dayText}>14</Text>
-                  </View>
-                  <View style={[styles.dayCell, styles.dayPresent]}>
-                    <Text style={styles.dayText}>15</Text>
-                  </View>
-                  <View style={[styles.dayCell, styles.dayPresent]}>
-                    <Text style={styles.dayText}>16</Text>
-                  </View>
-                  <View style={styles.dayCell}>
-                    <Text style={styles.dayTextInactive}>17</Text>
-                  </View>
-                </View>
-
-                <View style={styles.calendarRow}>
-                  <View style={styles.dayCell}>
-                    <Text style={styles.dayTextInactive}>18</Text>
-                  </View>
-                  <View style={[styles.dayCell, styles.dayPresent]}>
-                    <Text style={styles.dayText}>19</Text>
-                  </View>
-                  <View style={[styles.dayCell, styles.dayPresent]}>
-                    <Text style={styles.dayText}>20</Text>
-                  </View>
-                  <View style={[styles.dayCell, styles.dayPresent]}>
-                    <Text style={styles.dayText}>21</Text>
-                  </View>
-                  <View style={[styles.dayCell, styles.dayPresent]}>
-                    <Text style={styles.dayText}>22</Text>
-                  </View>
-                  <View style={[styles.dayCell, styles.dayPresent]}>
-                    <Text style={styles.dayText}>23</Text>
-                  </View>
-                  <View style={styles.dayCell}>
-                    <Text style={styles.dayTextInactive}>24</Text>
-                  </View>
-                </View>
-
-                <View style={styles.calendarRow}>
-                  <View style={styles.dayCell}>
-                    <Text style={styles.dayTextInactive}>25</Text>
-                  </View>
-                  <View style={[styles.dayCell, styles.dayToday]}>
-                    <Text style={styles.dayTextToday}>26</Text>
-                  </View>
-                  <View style={styles.dayCell}>
-                    <Text style={styles.dayTextFuture}>27</Text>
-                  </View>
-                  <View style={styles.dayCell}>
-                    <Text style={styles.dayTextFuture}>28</Text>
-                  </View>
-                  <View style={styles.dayCell}>
-                    <Text style={styles.dayTextFuture}>29</Text>
-                  </View>
-                  <View style={styles.dayCell}>
-                    <Text style={styles.dayTextFuture}>30</Text>
-                  </View>
-                  <View style={styles.dayCell}>
-                    <Text style={styles.dayTextInactive}>31</Text>
-                  </View>
-                </View>
+                ))}
               </View>
 
               {/* Legend */}
@@ -405,6 +608,10 @@ export default function StudentProfileScreen() {
                 <View style={styles.legendItem}>
                   <View style={[styles.legendDot, { backgroundColor: '#E05A5A' }]} />
                   <Text style={styles.legendText}>Absent</Text>
+                </View>
+                <View style={styles.legendItem}>
+                  <View style={[styles.legendDot, { backgroundColor: '#F39C12' }]} />
+                  <Text style={styles.legendText}>Late</Text>
                 </View>
                 <View style={styles.legendItem}>
                   <View style={[styles.legendDot, { backgroundColor: '#3498DB' }]} />
@@ -422,12 +629,10 @@ export default function StudentProfileScreen() {
                 </View>
                 <View style={styles.noteContent}>
                   <View style={styles.noteHeader}>
-                    <Text style={styles.noteTitle}>Sick Leave</Text>
-                    <Text style={styles.noteDate}>Jan 19</Text>
+                    <Text style={styles.noteTitle}>{attendanceSummary.noteTitle}</Text>
+                    <Text style={styles.noteDate}>{attendanceSummary.noteDate}</Text>
                   </View>
-                  <Text style={styles.noteText}>
-                    Priya was suffering from a mild fever.{'\n'}Parents informed via app.
-                  </Text>
+                  <Text style={styles.noteText}>{attendanceSummary.noteText}</Text>
                 </View>
               </View>
             </View>
@@ -454,7 +659,7 @@ export default function StudentProfileScreen() {
 
             {/* Skills Cards */}
             {(() => {
-              const skills = getSkillsForClass(student.class);
+              const skills = progressSkills;
               
               if (skills.length === 0) {
                 return (
@@ -501,10 +706,22 @@ export default function StudentProfileScreen() {
                       </View>
                     </View>
 
-                    {/* View Notes Button */}
-                    <TouchableOpacity style={styles.viewNotesBtn} activeOpacity={0.7}>
-                      <Text style={styles.viewNotesText}>View notes</Text>
-                      <Ionicons name="arrow-forward" size={16} color={AppColors.primaryBlue} />
+                    <TouchableOpacity
+                      style={styles.viewNotesBtn}
+                      activeOpacity={0.7}
+                      onPress={() => openNotesForSkill(skill)}
+                    >
+                      <View style={styles.viewNotesLeft}>
+                        <Text style={styles.viewNotesText}>
+                          {skill.notes.trim() ? 'View notes' : 'Add notes'}
+                        </Text>
+                        {skill.notes.trim() ? (
+                          <View style={styles.notesBadge}>
+                            <Text style={styles.notesBadgeText}>1</Text>
+                          </View>
+                        ) : null}
+                      </View>
+                      <Ionicons name="chevron-forward" size={18} color={AppColors.primaryBlue} />
                     </TouchableOpacity>
                   </View>
                 );
@@ -529,7 +746,464 @@ export default function StudentProfileScreen() {
         onClose={() => setEditModalVisible(false)}
         onSuccess={fetchStudentProfile}
       />
+
+      <AttendanceEditModal
+        visible={attendanceEditVisible}
+        summary={attendanceSummary}
+        days={attendanceDays}
+        month={attendanceMonth}
+        onClose={() => setAttendanceEditVisible(false)}
+        onSave={handleSaveAttendance}
+      />
+
+      <ProgressEditModal
+        visible={progressEditVisible}
+        selectedTerm={selectedTerm}
+        skills={progressSkills}
+        saving={progressSaving}
+        onClose={() => setProgressEditVisible(false)}
+        onSave={handleSaveProgress}
+      />
+
+      <SkillNotesModal
+        visible={notesModalSkill !== null}
+        skill={notesModalSkill}
+        term={selectedTerm}
+        onClose={() => setNotesModalSkill(null)}
+        onEditNotes={openEditNotesFromViewer}
+      />
     </View>
+  );
+}
+
+function SkillNotesModal({
+  visible,
+  skill,
+  term,
+  onClose,
+  onEditNotes,
+}: {
+  visible: boolean;
+  skill: Skill | null;
+  term: number;
+  onClose: () => void;
+  onEditNotes: () => void;
+}) {
+  if (!skill) return null;
+
+  const levelDetails = getProgressLevelDetails(skill.level);
+  const hasNotes = Boolean(skill.notes.trim());
+
+  return (
+    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
+      <View style={styles.modalOverlay}>
+        <View style={styles.notesModalContainer}>
+          <View style={styles.modalHeader}>
+            <View style={styles.notesModalHeaderLeft}>
+              <View style={[styles.skillIcon, { backgroundColor: `${levelDetails.color}20` }]}>
+                <Text style={styles.skillEmoji}>{skill.emoji}</Text>
+              </View>
+              <View>
+                <Text style={styles.modalTitle}>{skill.name}</Text>
+                <Text style={styles.modalSubtitle}>
+                  Term {term} · {levelDetails.label}
+                </Text>
+              </View>
+            </View>
+            <TouchableOpacity onPress={onClose} style={styles.closeBtn} activeOpacity={0.7}>
+              <Ionicons name="close" size={24} color={AppColors.textSecondary} />
+            </TouchableOpacity>
+          </View>
+
+          <ScrollView style={styles.notesModalContent} showsVerticalScrollIndicator={false}>
+            {hasNotes ? (
+              <Text style={styles.notesModalBody}>{skill.notes.trim()}</Text>
+            ) : (
+              <View style={styles.notesEmptyState}>
+                <Ionicons name="document-text-outline" size={48} color={AppColors.textLight} />
+                <Text style={styles.notesEmptyTitle}>No notes yet</Text>
+                <Text style={styles.notesEmptyText}>
+                  Add observations about how {skill.name.toLowerCase()} is developing this term.
+                </Text>
+              </View>
+            )}
+          </ScrollView>
+
+          <View style={styles.modalFooter}>
+            <TouchableOpacity style={styles.cancelBtn} onPress={onClose} activeOpacity={0.7}>
+              <Text style={styles.cancelBtnText}>Close</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.saveBtn} onPress={onEditNotes} activeOpacity={0.7}>
+              <Ionicons name="create-outline" size={18} color={AppColors.white} />
+              <Text style={styles.saveBtnText}>{hasNotes ? 'Edit notes' : 'Add notes'}</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+const STATUS_CHIP_COLORS: Record<
+  AttendanceStatus,
+  { bg: string; bgActive: string; text: string; textActive: string; border: string }
+> = {
+  present: {
+    bg: '#D4F4E8',
+    bgActive: '#2A9D6E',
+    text: '#1E7A4C',
+    textActive: '#FFFFFF',
+    border: '#A8E6C5',
+  },
+  absent: {
+    bg: '#FFE4E4',
+    bgActive: '#E05A5A',
+    text: '#B83A3A',
+    textActive: '#FFFFFF',
+    border: '#F5B8B8',
+  },
+  late: {
+    bg: '#FEF5E7',
+    bgActive: '#F39C12',
+    text: '#B8750A',
+    textActive: '#FFFFFF',
+    border: '#FAD9A6',
+  },
+  holiday: {
+    bg: '#E3F2FD',
+    bgActive: '#3498DB',
+    text: '#1F6FAF',
+    textActive: '#FFFFFF',
+    border: '#B3D9F5',
+  },
+};
+
+function getStatusChipStyle(status: AttendanceStatus, isActive: boolean) {
+  const colors = STATUS_CHIP_COLORS[status];
+  return {
+    backgroundColor: isActive ? colors.bgActive : colors.bg,
+    borderColor: isActive ? colors.bgActive : colors.border,
+    borderWidth: 1,
+  };
+}
+
+function getStatusChipTextStyle(status: AttendanceStatus, isActive: boolean) {
+  const colors = STATUS_CHIP_COLORS[status];
+  return {
+    color: isActive ? colors.textActive : colors.text,
+  };
+}
+
+function AttendanceEditModal({
+  visible,
+  summary,
+  days,
+  month,
+  onClose,
+  onSave,
+}: {
+  visible: boolean;
+  summary: AttendanceSummary;
+  days: AttendanceDay[];
+  month: Date;
+  onClose: () => void;
+  onSave: (
+    summary: AttendanceSummary,
+    days: AttendanceDay[]
+  ) => Promise<{ ok: boolean; message?: string }>;
+}) {
+  const [draftSummary, setDraftSummary] = useState(summary);
+  const [draftDays, setDraftDays] = useState(days);
+  const [saving, setSaving] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  const draftMetrics = useMemo(
+    () => metricsFromCalendarMonth(month, draftDays),
+    [draftDays, month]
+  );
+
+  useEffect(() => {
+    if (visible) {
+      setDraftSummary(summary);
+      setDraftDays(days);
+      setErrorMessage(null);
+    }
+  }, [days, summary, visible]);
+
+  function updateSummary(field: keyof AttendanceSummary, value: string) {
+    setDraftSummary((current) => ({ ...current, [field]: value }));
+  }
+
+  function updateDay(dayNumber: number, status: AttendanceStatus) {
+    setDraftDays((current) =>
+      current.map((day) => {
+        if (day.day !== dayNumber) return day;
+        if (day.status === 'future' || day.status === 'inactive') return day;
+        return { ...day, status };
+      })
+    );
+    setErrorMessage(null);
+  }
+
+  async function handleSavePress() {
+    setSaving(true);
+    setErrorMessage(null);
+    const result = await onSave(draftSummary, draftDays);
+    setSaving(false);
+    if (result.ok) {
+      onClose();
+      return;
+    }
+    setErrorMessage(result.message ?? 'Could not save attendance.');
+  }
+
+  return (
+    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
+      <View style={styles.modalOverlay}>
+        <View style={styles.modalContainer}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>Edit Attendance</Text>
+            <TouchableOpacity onPress={onClose} style={styles.closeBtn} activeOpacity={0.7}>
+              <Ionicons name="close" size={24} color={AppColors.textSecondary} />
+            </TouchableOpacity>
+          </View>
+
+          <ScrollView style={styles.modalContent} showsVerticalScrollIndicator={false}>
+            <View style={styles.metricsPreview}>
+              <Text style={styles.metricsPreviewTitle}>
+                {getMonthLabel(month)} — auto-calculated
+              </Text>
+              <Text style={styles.metricsPreviewText}>
+                Present {draftMetrics.presentPct}% · Effective absent {draftMetrics.absentPct}% ·
+                Working days {draftMetrics.workingDays} · Late {draftMetrics.lateCount} (4 Late = 1
+                Absent)
+              </Text>
+            </View>
+
+            <Text style={styles.label}>Calendar Status</Text>
+            <View style={styles.editCalendarGrid}>
+              {draftDays
+                .filter((day) => {
+                  if (day.status === 'future') return false;
+                  const date = new Date(month.getFullYear(), month.getMonth(), day.day);
+                  return date.getDay() !== 0 && date.getDay() !== 6;
+                })
+                .map((day) => (
+                <View key={day.day} style={styles.editDayBlock}>
+                  <Text style={styles.editDayNumber}>{day.day}</Text>
+                  <View style={styles.statusChipRow}>
+                    {(['present', 'absent', 'late', 'holiday'] as const).map((status) => {
+                      const isActive = day.status === status;
+                      return (
+                      <TouchableOpacity
+                        key={status}
+                        style={[
+                          styles.statusChip,
+                          getStatusChipStyle(status, isActive),
+                        ]}
+                        onPress={() => updateDay(day.day, status)}
+                        activeOpacity={0.7}
+                      >
+                        <Text
+                          style={[
+                            styles.statusChipText,
+                            getStatusChipTextStyle(status, isActive),
+                          ]}
+                        >
+                          {status === 'present' ? 'P' : status === 'absent' ? 'A' : status === 'late' ? 'L' : 'H'}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                    })}
+                  </View>
+                </View>
+              ))}
+            </View>
+
+            {errorMessage ? <Text style={styles.errorBanner}>{errorMessage}</Text> : null}
+
+            <View style={styles.formGroup}>
+              <Text style={styles.label}>Note Title</Text>
+              <TextInput
+                style={styles.input}
+                value={draftSummary.noteTitle}
+                onChangeText={(value) => updateSummary('noteTitle', value)}
+              />
+            </View>
+
+            <View style={styles.formRow}>
+              <View style={styles.formColumn}>
+                <Text style={styles.label}>Note Date</Text>
+                <TextInput
+                  style={styles.input}
+                  value={draftSummary.noteDate}
+                  onChangeText={(value) => updateSummary('noteDate', value)}
+                />
+              </View>
+            </View>
+
+            <View style={styles.formGroup}>
+              <Text style={styles.label}>Note</Text>
+              <TextInput
+                style={[styles.input, styles.textArea]}
+                value={draftSummary.noteText}
+                onChangeText={(value) => updateSummary('noteText', value)}
+                multiline
+                textAlignVertical="top"
+              />
+            </View>
+          </ScrollView>
+
+          <View style={styles.modalFooter}>
+            <TouchableOpacity style={styles.cancelBtn} onPress={onClose} activeOpacity={0.7}>
+              <Text style={styles.cancelBtnText}>Cancel</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.saveBtn, saving && styles.saveBtnDisabled]}
+              onPress={handleSavePress}
+              activeOpacity={0.7}
+              disabled={saving}
+            >
+              {saving ? (
+                <ActivityIndicator color={AppColors.white} size="small" />
+              ) : (
+                <Text style={styles.saveBtnText}>Save Attendance</Text>
+              )}
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+function ProgressEditModal({
+  visible,
+  selectedTerm,
+  skills,
+  saving,
+  onClose,
+  onSave,
+}: {
+  visible: boolean;
+  selectedTerm: 1 | 2 | 3;
+  skills: Skill[];
+  saving?: boolean;
+  onClose: () => void;
+  onSave: (skills: Skill[]) => void | Promise<void>;
+}) {
+  const [draftSkills, setDraftSkills] = useState<Skill[]>(skills);
+
+  useEffect(() => {
+    if (visible) {
+      setDraftSkills(skills.map((skill) => ({ ...skill })));
+    }
+  }, [skills, visible]);
+
+  function updateSkill(skillId: string, level: SkillLevel) {
+    setDraftSkills((current) =>
+      current.map((skill) => (skill.id === skillId ? { ...skill, level } : skill))
+    );
+  }
+
+  function updateNotes(skillId: string, notes: string) {
+    setDraftSkills((current) =>
+      current.map((skill) => (skill.id === skillId ? { ...skill, notes } : skill))
+    );
+  }
+
+  return (
+    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
+      <View style={styles.modalOverlay}>
+        <View style={styles.modalContainer}>
+          <View style={styles.modalHeader}>
+            <View>
+              <Text style={styles.modalTitle}>Edit Progress</Text>
+              <Text style={styles.modalSubtitle}>Term {selectedTerm}</Text>
+            </View>
+            <TouchableOpacity onPress={onClose} style={styles.closeBtn} activeOpacity={0.7}>
+              <Ionicons name="close" size={24} color={AppColors.textSecondary} />
+            </TouchableOpacity>
+          </View>
+
+          <ScrollView style={styles.modalContent} showsVerticalScrollIndicator={false}>
+            {draftSkills.length === 0 ? (
+              <Text style={styles.comingSoonText}>No skills to edit</Text>
+            ) : (
+              draftSkills.map((skill) => {
+                const levelDetails = getProgressLevelDetails(skill.level);
+                return (
+                  <View key={skill.id} style={styles.editSkillCard}>
+                    <View style={styles.skillHeader}>
+                      <View style={[styles.skillIcon, { backgroundColor: `${levelDetails.color}20` }]}>
+                        <Text style={styles.skillEmoji}>{skill.emoji}</Text>
+                      </View>
+                      <View style={styles.skillInfo}>
+                        <Text style={styles.skillName}>{skill.name}</Text>
+                        <Text style={[styles.skillLevel, { color: levelDetails.color }]}>
+                          {levelDetails.label}
+                        </Text>
+                      </View>
+                    </View>
+
+                    <View style={styles.levelOptions}>
+                      {SKILL_LEVELS.map((level) => (
+                        <TouchableOpacity
+                          key={level.value}
+                          style={[
+                            styles.levelOption,
+                            skill.level === level.value && { backgroundColor: level.color },
+                          ]}
+                          onPress={() => updateSkill(skill.id, level.value)}
+                          activeOpacity={0.7}
+                        >
+                          <Text
+                            style={[
+                              styles.levelOptionText,
+                              skill.level === level.value && styles.levelOptionTextActive,
+                            ]}
+                          >
+                            {level.label}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+
+                    <TextInput
+                      style={[styles.input, styles.textAreaCompact]}
+                      value={skill.notes}
+                      onChangeText={(notes) => updateNotes(skill.id, notes)}
+                      placeholder="Progress notes"
+                      placeholderTextColor={AppColors.textTertiary}
+                      multiline
+                      textAlignVertical="top"
+                    />
+                  </View>
+                );
+              })
+            )}
+          </ScrollView>
+
+          <View style={styles.modalFooter}>
+            <TouchableOpacity style={styles.cancelBtn} onPress={onClose} activeOpacity={0.7}>
+              <Text style={styles.cancelBtnText}>Cancel</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.saveBtn, saving && styles.saveBtnDisabled]}
+              onPress={() => onSave(draftSkills)}
+              activeOpacity={0.7}
+              disabled={saving}
+            >
+              {saving ? (
+                <ActivityIndicator color={AppColors.white} size="small" />
+              ) : (
+                <Text style={styles.saveBtnText}>Save Progress</Text>
+              )}
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
   );
 }
 
@@ -852,8 +1526,26 @@ const styles = StyleSheet.create({
   dayHoliday: {
     backgroundColor: '#E3F2FD',
   },
+  dayLate: {
+    backgroundColor: '#FEF5E7',
+  },
   dayToday: {
     backgroundColor: '#3498DB',
+  },
+  saveToast: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#D4F4E8',
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    marginBottom: 12,
+  },
+  saveToastText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#2A9D6E',
   },
   dayText: {
     fontSize: 14,
@@ -1038,12 +1730,281 @@ const styles = StyleSheet.create({
   viewNotesBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'flex-end',
-    gap: 6,
+    justifyContent: 'space-between',
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: AppColors.background,
+  },
+  viewNotesLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
   viewNotesText: {
     fontSize: 14,
     fontWeight: '600',
     color: AppColors.primaryBlue,
+  },
+  notesBadge: {
+    minWidth: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: AppColors.primaryBlue,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 6,
+  },
+  notesBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: AppColors.white,
+  },
+  notesModalContainer: {
+    backgroundColor: AppColors.white,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    maxHeight: '80%',
+    paddingBottom: 8,
+    ...AppShadows.floatingShadow,
+  },
+  notesModalHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    flex: 1,
+  },
+  notesModalContent: {
+    paddingHorizontal: 20,
+    paddingBottom: 16,
+    maxHeight: 320,
+  },
+  notesModalBody: {
+    fontSize: 15,
+    fontWeight: '500',
+    color: AppColors.textPrimary,
+    lineHeight: 24,
+  },
+  notesEmptyState: {
+    alignItems: 'center',
+    paddingVertical: 28,
+    paddingHorizontal: 12,
+  },
+  notesEmptyTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: AppColors.textPrimary,
+    marginTop: 12,
+    marginBottom: 6,
+  },
+  notesEmptyText: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: AppColors.textSecondary,
+    textAlign: 'center',
+    lineHeight: 20,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'flex-end',
+  },
+  modalContainer: {
+    backgroundColor: AppColors.white,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    maxHeight: '90%',
+    ...AppShadows.floatingShadow,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: AppColors.background,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: AppColors.textPrimary,
+  },
+  modalSubtitle: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: AppColors.textTertiary,
+    marginTop: 3,
+  },
+  closeBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: AppColors.background,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalContent: {
+    paddingHorizontal: 20,
+    paddingTop: 20,
+  },
+  modalFooter: {
+    flexDirection: 'row',
+    gap: 12,
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    borderTopWidth: 1,
+    borderTopColor: AppColors.background,
+  },
+  formGroup: {
+    marginBottom: 18,
+  },
+  formRow: {
+    flexDirection: 'row',
+    gap: 12,
+    marginBottom: 18,
+  },
+  formColumn: {
+    flex: 1,
+  },
+  label: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: AppColors.textPrimary,
+    marginBottom: 8,
+  },
+  input: {
+    backgroundColor: AppColors.background,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    fontSize: 15,
+    color: AppColors.textPrimary,
+    borderWidth: 1,
+    borderColor: AppColors.background,
+  },
+  textArea: {
+    minHeight: 96,
+  },
+  textAreaCompact: {
+    minHeight: 72,
+    marginTop: 12,
+  },
+  editCalendarGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+    marginBottom: 20,
+  },
+  editDayBlock: {
+    width: '30%',
+    minWidth: 92,
+    backgroundColor: AppColors.background,
+    borderRadius: 14,
+    padding: 10,
+    gap: 8,
+  },
+  editDayNumber: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: AppColors.textPrimary,
+  },
+  statusChipRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+  },
+  statusChip: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  statusChipText: {
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  editSkillCard: {
+    backgroundColor: AppColors.background,
+    borderRadius: 18,
+    padding: 16,
+    marginBottom: 14,
+  },
+  levelOptions: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 4,
+  },
+  levelOption: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 12,
+    backgroundColor: AppColors.white,
+  },
+  levelOptionText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: AppColors.textSecondary,
+  },
+  levelOptionTextActive: {
+    color: AppColors.white,
+  },
+  cancelBtn: {
+    flex: 1,
+    paddingVertical: 15,
+    borderRadius: 16,
+    backgroundColor: AppColors.background,
+    alignItems: 'center',
+  },
+  cancelBtnText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: AppColors.textSecondary,
+  },
+  saveBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 15,
+    borderRadius: 16,
+    backgroundColor: AppColors.primaryBlue,
+    ...AppShadows.cardShadow,
+  },
+  saveBtnText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: AppColors.white,
+  },
+  saveBtnDisabled: {
+    opacity: 0.65,
+  },
+  metricsPreview: {
+    backgroundColor: AppColors.blueLight,
+    borderRadius: 14,
+    padding: 14,
+    marginBottom: 16,
+  },
+  metricsPreviewTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: AppColors.primaryBlue,
+    marginBottom: 4,
+  },
+  metricsPreviewText: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: AppColors.textSecondary,
+    lineHeight: 18,
+  },
+  errorBanner: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#E05A5A',
+    marginBottom: 12,
   },
 });
