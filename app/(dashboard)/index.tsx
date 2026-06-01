@@ -14,8 +14,8 @@ import {
     TouchableOpacity,
     View
 } from 'react-native';
-import { useAuth } from '../../context/auth';
 import { DEFAULT_SCHOOL_ID, DEFAULT_SCHOOL_NAME } from '../../constants/school';
+import { useAuth } from '../../context/auth';
 import { presentWeightForStatus } from '../../lib/attendance';
 import { supabase } from '../../lib/supabase';
 
