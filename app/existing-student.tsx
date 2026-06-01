@@ -3,14 +3,14 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
 import {
-    Alert,
-    KeyboardAvoidingView,
-    Platform,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View,
+  Alert,
+  KeyboardAvoidingView,
+  Platform,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from 'react-native';
 import { COLORS } from '../constants/admissionTheme';
 
@@ -169,7 +169,7 @@ export default function ExistingStudentScreen() {
             <TouchableOpacity
               style={styles.newAdmissionBtn}
               activeOpacity={0.85}
-              onPress={() => router.push('/admission/step-1')}
+              onPress={() => router.push('/(dashboard)/admission/step-1')}
             >
               <View style={styles.newAdmissionIcon}>
                 <Ionicons name="person-add-outline" size={20} color={COLORS.secondary} />

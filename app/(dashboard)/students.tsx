@@ -12,6 +12,7 @@ import {
     View,
 } from 'react-native';
 import { AppColors, AppShadows } from '../../constants/theme';
+import { useAdmission } from '../../context/admission';
 import { useAuth } from '../../context/auth';
 import { supabase } from '../../lib/supabase';
 
@@ -50,6 +51,7 @@ function getInitials(name: string): string {
 export default function StudentsScreen() {
   const { profile } = useAuth();
   const router = useRouter();
+  const { resetAdmissionData } = useAdmission();
   const [students, setStudents] = useState<Student[]>([]);
   const [filteredStudents, setFilteredStudents] = useState<Student[]>([]);
   const [loading, setLoading] = useState(true);
@@ -240,7 +242,14 @@ export default function StudentsScreen() {
       />
 
       {/* Add Button */}
-      <TouchableOpacity style={styles.addBtn} activeOpacity={0.85}>
+      <TouchableOpacity 
+        style={styles.addBtn} 
+        activeOpacity={0.85}
+        onPress={() => {
+          resetAdmissionData();
+          router.push('/(dashboard)/admission/step-1');
+        }}
+      >
         <Ionicons name="add" size={28} color={AppColors.white} />
       </TouchableOpacity>
     </View>
@@ -353,7 +362,7 @@ const styles = StyleSheet.create({
   },
   listContent: {
     paddingHorizontal: 20,
-    paddingBottom: 100,
+    paddingBottom: 140,
   },
   studentCard: {
     flexDirection: 'row',
@@ -435,7 +444,7 @@ const styles = StyleSheet.create({
   },
   addBtn: {
     position: 'absolute',
-    bottom: 24,
+    bottom: 100,
     right: 24,
     width: 60,
     height: 60,

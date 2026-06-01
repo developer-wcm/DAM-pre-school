@@ -3,21 +3,20 @@ import { useFocusEffect } from '@react-navigation/native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-    ActivityIndicator,
-    Alert,
-    Modal,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  Alert,
+  Modal,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from 'react-native';
 import EditStudentModal from '../../components/EditStudentModal';
 import { getProgressLevelDetails, getSkillsForClass, SKILL_LEVELS, type Skill, type SkillLevel } from '../../constants/progressSkills';
 import { AppColors, AppShadows } from '../../constants/theme';
 import { useAuth } from '../../context/auth';
-import { loadStudentProgress, mergeSkillsWithSaved, saveStudentProgress } from '../../lib/progress';
 import {
   addMonths,
   AttendanceRecordStatus,
@@ -31,6 +30,7 @@ import {
   metricsFromCalendarMonth,
   saveStudentAttendanceMonth,
 } from '../../lib/attendance';
+import { loadStudentProgress, mergeSkillsWithSaved, saveStudentProgress } from '../../lib/progress';
 import { supabase } from '../../lib/supabase';
 
 interface StudentProfile {
@@ -46,6 +46,25 @@ interface StudentProfile {
 }
 
 type ProfileTab = 'info' | 'attendance' | 'fees' | 'progress';
+
+interface FeeRecord {
+  id: string;
+  label: string;
+  amount: number;
+  paid: boolean;
+  due_date: string | null;
+  paid_date: string | null;
+  installment_plan: string | null;
+  installment_number: number | null;
+  total_installments: number | null;
+}
+
+interface FeeStats {
+  totalAnnual: number;
+  paid: number;
+  outstanding: number;
+  percentage: number;
+}
 type AttendanceStatus = 'present' | 'absent' | 'late' | 'holiday';
 type AttendanceDay = CalendarDay;
 
@@ -166,6 +185,9 @@ export default function StudentProfileScreen() {
   const [attendanceLoading, setAttendanceLoading] = useState(false);
   const [attendanceSaveMessage, setAttendanceSaveMessage] = useState<string | null>(null);
   const [progressSkills, setProgressSkills] = useState<Skill[]>([]);
+  const [feeRecords, setFeeRecords] = useState<FeeRecord[]>([]);
+  const [feeStats, setFeeStats] = useState<FeeStats>({ totalAnnual: 0, paid: 0, outstanding: 0, percentage: 0 });
+  const [feeLoading, setFeeLoading] = useState(false);
   const todayDayNumber = useMemo(() => new Date().getDate(), []);
   const isViewingCurrentMonth = useMemo(() => {
     const now = new Date();
@@ -254,6 +276,52 @@ export default function StudentProfileScreen() {
       }
     }, [activeTab, loadAttendanceMonth, student?.school_id])
   );
+
+  const loadFeeData = useCallback(async () => {
+    if (!studentId || !student?.school_id) return;
+    setFeeLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('fees')
+        .select('*')
+        .eq('student_id', studentId)
+        .eq('school_id', student.school_id)
+        .neq('installment_number', 0) // Exclude parent records
+        .order('due_date', { ascending: true });
+
+      if (error) throw error;
+
+      const records: FeeRecord[] = (data ?? []).map((f: any) => ({
+        id: f.id,
+        label: f.label ?? f.description ?? 'Fee',
+        amount: Number(f.amount),
+        paid: Boolean(f.paid),
+        due_date: f.due_date ?? null,
+        paid_date: f.paid_date ?? null,
+        installment_plan: f.installment_plan ?? null,
+        installment_number: f.installment_number ?? null,
+        total_installments: f.total_installments ?? null,
+      }));
+
+      const totalAnnual = records.reduce((s, r) => s + r.amount, 0);
+      const paid = records.filter((r) => r.paid).reduce((s, r) => s + r.amount, 0);
+      const outstanding = totalAnnual - paid;
+      const percentage = totalAnnual > 0 ? Math.round((paid / totalAnnual) * 100) : 0;
+
+      setFeeRecords(records);
+      setFeeStats({ totalAnnual, paid, outstanding, percentage });
+    } catch (e) {
+      console.error('Error fetching fees:', e);
+    } finally {
+      setFeeLoading(false);
+    }
+  }, [studentId, student?.school_id]);
+
+  useEffect(() => {
+    if (activeTab === 'fees' && student?.school_id) {
+      loadFeeData();
+    }
+  }, [activeTab, loadFeeData, student?.school_id]);
 
   async function fetchStudentProfile() {
     try {
@@ -475,48 +543,230 @@ export default function StudentProfileScreen() {
 
         {/* Content */}
         {activeTab === 'info' && (
-          <View style={styles.infoCard}>
-            <View style={styles.infoHeader}>
-              <Ionicons name="person-circle-outline" size={24} color={AppColors.gold} />
-              <Text style={styles.infoTitle}>Personal Details</Text>
-            </View>
-
-            <View style={styles.infoGrid}>
-              <View style={styles.infoItem}>
-                <Text style={styles.infoLabel}>DATE OF BIRTH</Text>
-                <Text style={styles.infoValue}>{formatDate(student.date_of_birth)}</Text>
+          <ScrollView showsVerticalScrollIndicator={false}>
+            {/* Personal Details */}
+            <View style={styles.infoCard}>
+              <View style={styles.infoHeader}>
+                <Ionicons name="person-circle-outline" size={24} color={AppColors.gold} />
+                <Text style={styles.infoTitle}>Personal Details</Text>
               </View>
-              <View style={styles.infoItem}>
-                <Text style={styles.infoLabel}>GENDER</Text>
+
+              <View style={styles.infoGrid}>
+                <View style={styles.infoItem}>
+                  <Text style={styles.infoLabel}>DATE OF BIRTH</Text>
+                  <Text style={styles.infoValue}>{formatDate(student.date_of_birth)}</Text>
+                </View>
+                <View style={styles.infoItem}>
+                  <Text style={styles.infoLabel}>GENDER</Text>
+                  <Text style={styles.infoValue}>
+                    {student.gender ? student.gender.charAt(0).toUpperCase() + student.gender.slice(1) : 'N/A'}
+                  </Text>
+                </View>
+              </View>
+
+              <View style={styles.infoGrid}>
+                <View style={styles.infoItem}>
+                  <Text style={styles.infoLabel}>MOTHER TONGUE</Text>
+                  <Text style={styles.infoValue}>Hindi</Text>
+                </View>
+                <View style={styles.infoItem}>
+                  <Text style={styles.infoLabel}>NATIONALITY</Text>
+                  <Text style={styles.infoValue}>Indian</Text>
+                </View>
+              </View>
+
+              <View style={styles.infoSection}>
+                <Text style={styles.infoLabel}>AADHAAR (LAST 4 DIGITS)</Text>
+                <Text style={styles.infoValue}>XXXX-XXXX-1234</Text>
+              </View>
+
+              <View style={styles.infoSection}>
+                <Text style={styles.infoLabel}>ADDRESS</Text>
                 <Text style={styles.infoValue}>
-                  {student.gender ? student.gender.charAt(0).toUpperCase() + student.gender.slice(1) : 'N/A'}
+                  42, Maple Avenue, Prestige Garden{'\n'}Layout, Bangalore - 560001
                 </Text>
               </View>
-            </View>
 
-            <View style={styles.infoSection}>
-              <Text style={styles.infoLabel}>ADDRESS</Text>
-              <Text style={styles.infoValue}>
-                42, Maple Avenue, Prestige Garden{'\n'}Layout, Bangalore - 560001
-              </Text>
-            </View>
-
-            {/* Map Placeholder */}
-            <View style={styles.mapPlaceholder}>
-              <View style={styles.mapOverlay}>
-                <TouchableOpacity style={styles.mapButton} activeOpacity={0.8}>
-                  <Text style={styles.mapButtonText}>View on Map</Text>
-                </TouchableOpacity>
+              {/* Map Placeholder */}
+              <View style={styles.mapPlaceholder}>
+                <View style={styles.mapOverlay}>
+                  <TouchableOpacity style={styles.mapButton} activeOpacity={0.8}>
+                    <Text style={styles.mapButtonText}>View on Map</Text>
+                  </TouchableOpacity>
+                </View>
               </View>
             </View>
 
-            {student.admission_date && (
+            {/* Academic Details */}
+            <View style={styles.infoCard}>
+              <View style={styles.infoHeader}>
+                <Ionicons name="school-outline" size={24} color={AppColors.gold} />
+                <Text style={styles.infoTitle}>Academic Details</Text>
+              </View>
+
+              <View style={styles.infoGrid}>
+                <View style={styles.infoItem}>
+                  <Text style={styles.infoLabel}>ADMISSION DATE</Text>
+                  <Text style={styles.infoValue}>{formatDate(student.admission_date)}</Text>
+                </View>
+                <View style={styles.infoItem}>
+                  <Text style={styles.infoLabel}>CLASS</Text>
+                  <Text style={styles.infoValue}>
+                    {student.class === 'PG' ? 'Play Group' :
+                     student.class === 'PKG' ? 'Pre-KG' :
+                     student.class === 'JKG' ? 'Junior KG' :
+                     student.class === 'SKG' ? 'Senior KG' : student.class}
+                  </Text>
+                </View>
+              </View>
+
+              <View style={styles.infoGrid}>
+                <View style={styles.infoItem}>
+                  <Text style={styles.infoLabel}>PAYMENT CYCLE</Text>
+                  <Text style={styles.infoValue}>Monthly (12 installments)</Text>
+                </View>
+                <View style={styles.infoItem}>
+                  <Text style={styles.infoLabel}>AUTO REMINDERS</Text>
+                  <Text style={styles.infoValue}>Active</Text>
+                </View>
+              </View>
+
               <View style={styles.infoSection}>
-                <Text style={styles.infoLabel}>ADMISSION DATE</Text>
-                <Text style={styles.infoValue}>{formatDate(student.admission_date)}</Text>
+                <Text style={styles.infoLabel}>DISCOUNT APPLIED</Text>
+                <Text style={styles.infoValue}>Sibling Discount (10%)</Text>
               </View>
-            )}
-          </View>
+            </View>
+
+            {/* Father's Details */}
+            <View style={styles.infoCard}>
+              <View style={styles.infoHeader}>
+                <Ionicons name="man-outline" size={24} color={AppColors.gold} />
+                <Text style={styles.infoTitle}>Father's Details</Text>
+              </View>
+
+              <View style={styles.infoSection}>
+                <Text style={styles.infoLabel}>FULL NAME</Text>
+                <Text style={styles.infoValue}>Rajesh Kumar</Text>
+              </View>
+
+              <View style={styles.infoGrid}>
+                <View style={styles.infoItem}>
+                  <Text style={styles.infoLabel}>PHONE NUMBER</Text>
+                  <Text style={styles.infoValue}>+91 98765 43210</Text>
+                </View>
+                <View style={styles.infoItem}>
+                  <Text style={styles.infoLabel}>EMAIL</Text>
+                  <Text style={styles.infoValue}>rajesh@email.com</Text>
+                </View>
+              </View>
+
+              <View style={styles.infoGrid}>
+                <View style={styles.infoItem}>
+                  <Text style={styles.infoLabel}>OCCUPATION</Text>
+                  <Text style={styles.infoValue}>Software Engineer</Text>
+                </View>
+                <View style={styles.infoItem}>
+                  <Text style={styles.infoLabel}>WORK LOCATION</Text>
+                  <Text style={styles.infoValue}>Bangalore</Text>
+                </View>
+              </View>
+            </View>
+
+            {/* Mother's Details */}
+            <View style={styles.infoCard}>
+              <View style={styles.infoHeader}>
+                <Ionicons name="woman-outline" size={24} color={AppColors.gold} />
+                <Text style={styles.infoTitle}>Mother's Details</Text>
+              </View>
+
+              <View style={styles.infoSection}>
+                <Text style={styles.infoLabel}>FULL NAME</Text>
+                <Text style={styles.infoValue}>Priya Kumar</Text>
+              </View>
+
+              <View style={styles.infoGrid}>
+                <View style={styles.infoItem}>
+                  <Text style={styles.infoLabel}>PHONE NUMBER</Text>
+                  <Text style={styles.infoValue}>+91 98765 43211</Text>
+                </View>
+                <View style={styles.infoItem}>
+                  <Text style={styles.infoLabel}>EMAIL</Text>
+                  <Text style={styles.infoValue}>priya@email.com</Text>
+                </View>
+              </View>
+
+              <View style={styles.infoGrid}>
+                <View style={styles.infoItem}>
+                  <Text style={styles.infoLabel}>OCCUPATION</Text>
+                  <Text style={styles.infoValue}>Teacher</Text>
+                </View>
+                <View style={styles.infoItem}>
+                  <Text style={styles.infoLabel}>WORK LOCATION</Text>
+                  <Text style={styles.infoValue}>Bangalore</Text>
+                </View>
+              </View>
+            </View>
+
+            {/* Guardian Details (if applicable) */}
+            <View style={styles.infoCard}>
+              <View style={styles.infoHeader}>
+                <Ionicons name="people-outline" size={24} color={AppColors.gold} />
+                <Text style={styles.infoTitle}>Guardian Details</Text>
+              </View>
+
+              <View style={styles.infoSection}>
+                <Text style={styles.infoValue}>No guardian information provided</Text>
+              </View>
+            </View>
+
+            {/* Documents */}
+            <View style={styles.infoCard}>
+              <View style={styles.infoHeader}>
+                <Ionicons name="document-text-outline" size={24} color={AppColors.gold} />
+                <Text style={styles.infoTitle}>Documents</Text>
+              </View>
+
+              <TouchableOpacity style={styles.documentItem} activeOpacity={0.7}>
+                <View style={styles.documentLeft}>
+                  <Ionicons name="document-outline" size={20} color={AppColors.primaryBlue} />
+                  <Text style={styles.documentText}>Birth Certificate</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={20} color={AppColors.textSecondary} />
+              </TouchableOpacity>
+
+              <TouchableOpacity style={styles.documentItem} activeOpacity={0.7}>
+                <View style={styles.documentLeft}>
+                  <Ionicons name="document-outline" size={20} color={AppColors.primaryBlue} />
+                  <Text style={styles.documentText}>Aadhaar Card</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={20} color={AppColors.textSecondary} />
+              </TouchableOpacity>
+
+              <TouchableOpacity style={styles.documentItem} activeOpacity={0.7}>
+                <View style={styles.documentLeft}>
+                  <Ionicons name="image-outline" size={20} color={AppColors.primaryBlue} />
+                  <Text style={styles.documentText}>Student Photos</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={20} color={AppColors.textSecondary} />
+              </TouchableOpacity>
+
+              <TouchableOpacity style={styles.documentItem} activeOpacity={0.7}>
+                <View style={styles.documentLeft}>
+                  <Ionicons name="document-outline" size={20} color={AppColors.primaryBlue} />
+                  <Text style={styles.documentText}>Medical Certificate</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={20} color={AppColors.textSecondary} />
+              </TouchableOpacity>
+
+              <TouchableOpacity style={styles.documentItem} activeOpacity={0.7}>
+                <View style={styles.documentLeft}>
+                  <Ionicons name="document-outline" size={20} color={AppColors.primaryBlue} />
+                  <Text style={styles.documentText}>Transfer Certificate</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={20} color={AppColors.textSecondary} />
+              </TouchableOpacity>
+            </View>
+          </ScrollView>
         )}
 
         {activeTab === 'attendance' && (
@@ -731,9 +981,12 @@ export default function StudentProfileScreen() {
         )}
 
         {activeTab === 'fees' && (
-          <View style={styles.infoCard}>
-            <Text style={styles.comingSoonText}>Fee details coming soon</Text>
-          </View>
+          <FeeTab
+            feeRecords={feeRecords}
+            feeStats={feeStats}
+            feeLoading={feeLoading}
+            onPaymentSuccess={loadFeeData}
+          />
         )}
 
         <View style={{ height: 40 }} />
@@ -775,6 +1028,807 @@ export default function StudentProfileScreen() {
     </View>
   );
 }
+
+// ─── Fee Tab ─────────────────────────────────────────────────────────────────
+
+function formatCurrency(amount: number): string {
+  return `₹${amount.toLocaleString('en-IN')}`;
+}
+
+function getFeeStatus(record: FeeRecord): { label: string; color: string; bg: string } {
+  if (record.paid) return { label: 'PAID', color: '#2A9D6E', bg: '#D4F4E8' };
+  const today = new Date().toISOString().split('T')[0];
+  if (record.due_date && record.due_date < today) return { label: 'OVERDUE', color: '#E74C3C', bg: '#FFE4E4' };
+  if (!record.due_date) return { label: 'PENDING', color: AppColors.textSecondary, bg: AppColors.blueLight };
+  return { label: 'PENDING', color: AppColors.textSecondary, bg: AppColors.blueLight };
+}
+
+function getFeeIcon(record: FeeRecord): { name: any; color: string; bg: string } {
+  if (record.paid) return { name: 'checkmark-circle', color: '#2A9D6E', bg: '#D4F4E8' };
+  const today = new Date().toISOString().split('T')[0];
+  if (record.due_date && record.due_date < today) return { name: 'alert-circle', color: '#E74C3C', bg: '#FFE4E4' };
+  return { name: 'time-outline', color: AppColors.textSecondary, bg: AppColors.blueLight };
+}
+
+function formatFeeDate(dateStr: string | null): string {
+  if (!dateStr) return 'Upcoming';
+  return new Date(dateStr).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+}
+
+function FeeTab({
+  feeRecords,
+  feeStats,
+  feeLoading,
+  onPaymentSuccess,
+}: {
+  feeRecords: FeeRecord[];
+  feeStats: FeeStats;
+  feeLoading: boolean;
+  onPaymentSuccess: () => void;
+}) {
+  const [selectedPlan, setSelectedPlan] = useState<'monthly' | 'quarterly'>('monthly');
+  const [paymentModalVisible, setPaymentModalVisible] = useState(false);
+  
+  // Filter records by selected plan
+  const filteredRecords = feeRecords.filter(r => r.installment_plan === selectedPlan);
+  
+  // Recalculate stats for filtered records
+  const filteredStats = {
+    totalAnnual: filteredRecords.reduce((s, r) => s + r.amount, 0),
+    paid: filteredRecords.filter(r => r.paid).reduce((s, r) => s + r.amount, 0),
+    outstanding: 0,
+    percentage: 0,
+  };
+  filteredStats.outstanding = filteredStats.totalAnnual - filteredStats.paid;
+  filteredStats.percentage = filteredStats.totalAnnual > 0 ? Math.round((filteredStats.paid / filteredStats.totalAnnual) * 100) : 0;
+  
+  const overdueCount = filteredRecords.filter((r) => {
+    if (r.paid) return false;
+    const today = new Date().toISOString().split('T')[0];
+    return r.due_date && r.due_date < today;
+  }).length;
+
+  if (feeLoading) {
+    return (
+      <View style={feeStyles.loadingBox}>
+        <ActivityIndicator size="small" color={AppColors.primaryBlue} />
+      </View>
+    );
+  }
+
+  if (feeRecords.length === 0) {
+    return (
+      <View style={feeStyles.emptyBox}>
+        <Ionicons name="wallet-outline" size={48} color={AppColors.textLight} />
+        <Text style={feeStyles.emptyTitle}>No fee records</Text>
+        <Text style={feeStyles.emptyText}>Fee records for this student will appear here.</Text>
+      </View>
+    );
+  }
+
+  return (
+    <View style={feeStyles.container}>
+      {/* Plan Selector */}
+      <View style={feeStyles.planSelector}>
+        <TouchableOpacity
+          style={[feeStyles.planBtn, selectedPlan === 'monthly' && feeStyles.planBtnActive]}
+          onPress={() => setSelectedPlan('monthly')}
+          activeOpacity={0.7}
+        >
+          <Text style={[feeStyles.planBtnText, selectedPlan === 'monthly' && feeStyles.planBtnTextActive]}>
+            Monthly (12)
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[feeStyles.planBtn, selectedPlan === 'quarterly' && feeStyles.planBtnActive]}
+          onPress={() => setSelectedPlan('quarterly')}
+          activeOpacity={0.7}
+        >
+          <Text style={[feeStyles.planBtnText, selectedPlan === 'quarterly' && feeStyles.planBtnTextActive]}>
+            Quarterly (4)
+          </Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* Summary Card */}
+      <View style={feeStyles.summaryCard}>
+        <View style={feeStyles.summaryTop}>
+          <View>
+            <Text style={feeStyles.totalLabel}>TOTAL ANNUAL FEE</Text>
+            <Text style={feeStyles.totalAmount}>{formatCurrency(filteredStats.totalAnnual)}</Text>
+          </View>
+          <View style={feeStyles.walletIcon}>
+            <Ionicons name="wallet" size={22} color={AppColors.primaryBlue} />
+          </View>
+        </View>
+
+        <View style={feeStyles.paidOutstandingRow}>
+          <View style={feeStyles.paidBox}>
+            <Text style={feeStyles.paidLabel}>Paid</Text>
+            <Text style={feeStyles.paidAmount}>{formatCurrency(filteredStats.paid)}</Text>
+          </View>
+          <View style={feeStyles.outstandingBox}>
+            <Text style={feeStyles.outstandingLabel}>Outstanding</Text>
+            <Text style={feeStyles.outstandingAmount}>{formatCurrency(filteredStats.outstanding)}</Text>
+          </View>
+        </View>
+
+        <View style={feeStyles.progressSection}>
+          <View style={feeStyles.progressLabelRow}>
+            <Text style={feeStyles.progressLabel}>Progress</Text>
+            <Text style={feeStyles.progressPct}>{filteredStats.percentage}%</Text>
+          </View>
+          <View style={feeStyles.progressBarBg}>
+            <View style={[feeStyles.progressBarFill, { width: `${filteredStats.percentage}%` }]} />
+          </View>
+        </View>
+      </View>
+
+      {/* Fee History */}
+      <View style={feeStyles.historySection}>
+        <View style={feeStyles.historyHeader}>
+          <Text style={feeStyles.historyTitle}>Fee History</Text>
+          {overdueCount > 0 && (
+            <View style={feeStyles.overdueBadge}>
+              <Text style={feeStyles.overdueBadgeText}>{overdueCount} Overdue</Text>
+            </View>
+          )}
+        </View>
+
+        {filteredRecords.map((record) => {
+          const status = getFeeStatus(record);
+          const icon = getFeeIcon(record);
+          const isOverdue = status.label === 'OVERDUE';
+          const showInstallmentBadge = record.installment_plan && record.installment_number && record.total_installments;
+
+          return (
+            <View
+              key={record.id}
+              style={[feeStyles.feeRow, isOverdue && feeStyles.feeRowOverdue]}
+            >
+              <View style={[feeStyles.feeIcon, { backgroundColor: icon.bg }]}>
+                <Ionicons name={icon.name} size={22} color={icon.color} />
+              </View>
+
+              <View style={feeStyles.feeInfo}>
+                <View style={feeStyles.feeLabelRow}>
+                  <Text style={feeStyles.feeLabel}>{record.label}</Text>
+                  {showInstallmentBadge && (
+                    <View style={feeStyles.installmentBadge}>
+                      <Text style={feeStyles.installmentBadgeText}>
+                        {record.installment_number}/{record.total_installments}
+                      </Text>
+                    </View>
+                  )}
+                </View>
+                <Text style={[feeStyles.feeDate, isOverdue && { color: AppColors.error }]}>
+                  {record.paid && record.paid_date
+                    ? formatFeeDate(record.paid_date)
+                    : record.due_date
+                    ? `Due: ${formatFeeDate(record.due_date)}`
+                    : 'Upcoming'}
+                </Text>
+              </View>
+
+              <View style={feeStyles.feeRight}>
+                <Text style={feeStyles.feeAmount}>{formatCurrency(record.amount)}</Text>
+                <View style={[feeStyles.statusBadge, { backgroundColor: status.bg }]}>
+                  <Text style={[feeStyles.statusText, { color: status.color }]}>{status.label}</Text>
+                </View>
+              </View>
+            </View>
+          );
+        })}
+      </View>
+
+      {/* Pay Outstanding Button */}
+      {filteredStats.outstanding > 0 && (
+        <TouchableOpacity 
+          style={feeStyles.payBtn} 
+          activeOpacity={0.85}
+          onPress={() => setPaymentModalVisible(true)}
+        >
+          <Ionicons name="card-outline" size={20} color={AppColors.white} />
+          <Text style={feeStyles.payBtnText}>Pay Outstanding</Text>
+        </TouchableOpacity>
+      )}
+
+      <View style={{ height: 20 }} />
+
+      {/* Payment Modal */}
+      <PaymentModal
+        visible={paymentModalVisible}
+        feeRecords={filteredRecords.filter(r => !r.paid)}
+        onClose={() => setPaymentModalVisible(false)}
+        onSuccess={() => {
+          setPaymentModalVisible(false);
+          onPaymentSuccess();
+        }}
+      />
+    </View>
+  );
+}
+
+const feeStyles = StyleSheet.create({
+  loadingBox: {
+    paddingVertical: 48,
+    alignItems: 'center',
+  },
+  emptyBox: {
+    alignItems: 'center',
+    paddingVertical: 48,
+    gap: 8,
+  },
+  emptyTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: AppColors.textPrimary,
+  },
+  emptyText: {
+    fontSize: 13,
+    color: AppColors.textSecondary,
+    textAlign: 'center',
+  },
+  container: {
+    gap: 20,
+  },
+  // Plan Selector
+  planSelector: {
+    flexDirection: 'row',
+    gap: 10,
+    backgroundColor: AppColors.white,
+    borderRadius: 16,
+    padding: 6,
+    ...AppShadows.cardShadow,
+  },
+  planBtn: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 12,
+    alignItems: 'center',
+    backgroundColor: 'transparent',
+  },
+  planBtnActive: {
+    backgroundColor: AppColors.primaryBlue,
+  },
+  planBtnText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: AppColors.textSecondary,
+  },
+  planBtnTextActive: {
+    color: AppColors.white,
+  },
+  // Summary Card
+  summaryCard: {
+    backgroundColor: AppColors.white,
+    borderRadius: 20,
+    padding: 20,
+    gap: 16,
+    ...AppShadows.cardShadow,
+  },
+  summaryTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+  },
+  totalLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: AppColors.textTertiary,
+    letterSpacing: 0.5,
+    marginBottom: 4,
+  },
+  totalAmount: {
+    fontSize: 32,
+    fontWeight: '800',
+    color: AppColors.primaryBlue,
+  },
+  walletIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    backgroundColor: AppColors.blueLight,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  paidOutstandingRow: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  paidBox: {
+    flex: 1,
+    backgroundColor: AppColors.background,
+    borderRadius: 12,
+    padding: 14,
+    gap: 4,
+  },
+  outstandingBox: {
+    flex: 1,
+    backgroundColor: AppColors.background,
+    borderRadius: 12,
+    padding: 14,
+    gap: 4,
+  },
+  paidLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: AppColors.textSecondary,
+  },
+  paidAmount: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#2A9D6E',
+  },
+  outstandingLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: AppColors.textSecondary,
+  },
+  outstandingAmount: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: AppColors.error,
+  },
+  progressSection: {
+    gap: 8,
+  },
+  progressLabelRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  progressLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: AppColors.textSecondary,
+  },
+  progressPct: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: AppColors.primaryBlue,
+  },
+  progressBarBg: {
+    height: 8,
+    backgroundColor: AppColors.blueLight,
+    borderRadius: 4,
+    overflow: 'hidden',
+  },
+  progressBarFill: {
+    height: '100%',
+    backgroundColor: AppColors.primaryBlue,
+    borderRadius: 4,
+  },
+  // Fee History
+  historySection: {
+    gap: 10,
+  },
+  historyHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 4,
+  },
+  historyTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: AppColors.textPrimary,
+  },
+  overdueBadge: {
+    backgroundColor: '#FFE4E4',
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+  },
+  overdueBadgeText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: AppColors.error,
+  },
+  feeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: AppColors.white,
+    borderRadius: 16,
+    padding: 14,
+    gap: 12,
+    ...AppShadows.cardShadow,
+  },
+  feeRowOverdue: {
+    borderLeftWidth: 3,
+    borderLeftColor: AppColors.error,
+  },
+  feeIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  feeInfo: {
+    flex: 1,
+    gap: 3,
+  },
+  feeLabelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  feeLabel: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: AppColors.textPrimary,
+    flex: 1,
+  },
+  installmentBadge: {
+    backgroundColor: AppColors.goldLight,
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+  },
+  installmentBadgeText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: AppColors.gold,
+  },
+  feeDate: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: AppColors.textSecondary,
+  },
+  feeRight: {
+    alignItems: 'flex-end',
+    gap: 6,
+  },
+  feeAmount: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: AppColors.textPrimary,
+  },
+  statusBadge: {
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  statusText: {
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 0.3,
+  },
+  // Pay Button
+  payBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    backgroundColor: AppColors.primaryBlue,
+    borderRadius: 16,
+    paddingVertical: 16,
+    ...AppShadows.floatingShadow,
+  },
+  payBtnText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: AppColors.white,
+  },
+});
+
+function PaymentModal({
+  visible,
+  feeRecords,
+  onClose,
+  onSuccess,
+}: {
+  visible: boolean;
+  feeRecords: FeeRecord[];
+  onClose: () => void;
+  onSuccess: () => void;
+}) {
+  const [selectedFees, setSelectedFees] = useState<Set<string>>(new Set());
+  const [paymentMethod, setPaymentMethod] = useState<'cash' | 'upi' | 'card' | 'cheque'>('upi');
+  const [transactionId, setTransactionId] = useState('');
+  const [processing, setProcessing] = useState(false);
+
+  useEffect(() => {
+    if (visible) {
+      setSelectedFees(new Set(feeRecords.map(f => f.id)));
+      setTransactionId('');
+    }
+  }, [visible, feeRecords]);
+
+  const toggleFee = (feeId: string) => {
+    const newSet = new Set(selectedFees);
+    if (newSet.has(feeId)) {
+      newSet.delete(feeId);
+    } else {
+      newSet.add(feeId);
+    }
+    setSelectedFees(newSet);
+  };
+
+  const totalAmount = feeRecords
+    .filter(f => selectedFees.has(f.id))
+    .reduce((sum, f) => sum + f.amount, 0);
+
+  const handlePayment = async () => {
+    if (selectedFees.size === 0) {
+      Alert.alert('No fees selected', 'Please select at least one fee to pay.');
+      return;
+    }
+
+    setProcessing(true);
+    try {
+      const feeIds = Array.from(selectedFees);
+      const updates = feeIds.map(feeId => ({
+        id: feeId,
+        paid: true,
+        paid_date: new Date().toISOString().split('T')[0],
+        payment_method: paymentMethod,
+        transaction_id: transactionId || null,
+        updated_at: new Date().toISOString(),
+      }));
+
+      for (const update of updates) {
+        const { error } = await supabase
+          .from('fees')
+          .update(update)
+          .eq('id', update.id);
+
+        if (error) throw error;
+      }
+
+      Alert.alert('Success', `Payment of ${formatCurrency(totalAmount)} recorded successfully!`);
+      
+      // Close modal and refresh data
+      onSuccess();
+    } catch (error) {
+      console.error('Payment error:', error);
+      Alert.alert('Error', 'Failed to record payment. Please try again.');
+    } finally {
+      setProcessing(false);
+    }
+  };
+
+  return (
+    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
+      <View style={styles.modalOverlay}>
+        <View style={paymentStyles.container}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>Record Payment</Text>
+            <TouchableOpacity onPress={onClose} style={styles.closeBtn} activeOpacity={0.7}>
+              <Ionicons name="close" size={24} color={AppColors.textSecondary} />
+            </TouchableOpacity>
+          </View>
+
+          <ScrollView style={paymentStyles.content} showsVerticalScrollIndicator={false}>
+            {/* Fee Selection */}
+            <Text style={paymentStyles.sectionTitle}>Select Fees to Pay</Text>
+            {feeRecords.map(fee => (
+              <TouchableOpacity
+                key={fee.id}
+                style={[
+                  paymentStyles.feeItem,
+                  selectedFees.has(fee.id) && paymentStyles.feeItemSelected
+                ]}
+                onPress={() => toggleFee(fee.id)}
+                activeOpacity={0.7}
+              >
+                <View style={paymentStyles.checkbox}>
+                  {selectedFees.has(fee.id) && (
+                    <Ionicons name="checkmark" size={18} color={AppColors.white} />
+                  )}
+                </View>
+                <View style={paymentStyles.feeItemInfo}>
+                  <Text style={paymentStyles.feeItemLabel}>{fee.label}</Text>
+                  {fee.due_date && (
+                    <Text style={paymentStyles.feeItemDate}>Due: {formatFeeDate(fee.due_date)}</Text>
+                  )}
+                </View>
+                <Text style={paymentStyles.feeItemAmount}>{formatCurrency(fee.amount)}</Text>
+              </TouchableOpacity>
+            ))}
+
+            {/* Payment Method */}
+            <Text style={[paymentStyles.sectionTitle, { marginTop: 20 }]}>Payment Method</Text>
+            <View style={paymentStyles.methodGrid}>
+              {(['cash', 'upi', 'card', 'cheque'] as const).map(method => (
+                <TouchableOpacity
+                  key={method}
+                  style={[
+                    paymentStyles.methodBtn,
+                    paymentMethod === method && paymentStyles.methodBtnActive
+                  ]}
+                  onPress={() => setPaymentMethod(method)}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons
+                    name={
+                      method === 'cash' ? 'cash-outline' :
+                      method === 'upi' ? 'phone-portrait-outline' :
+                      method === 'card' ? 'card-outline' : 'document-text-outline'
+                    }
+                    size={24}
+                    color={paymentMethod === method ? AppColors.white : AppColors.primaryBlue}
+                  />
+                  <Text style={[
+                    paymentStyles.methodText,
+                    paymentMethod === method && paymentStyles.methodTextActive
+                  ]}>
+                    {method.toUpperCase()}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            {/* Transaction ID */}
+            {paymentMethod !== 'cash' && (
+              <>
+                <Text style={[paymentStyles.sectionTitle, { marginTop: 20 }]}>
+                  Transaction ID (Optional)
+                </Text>
+                <TextInput
+                  style={paymentStyles.input}
+                  placeholder="Enter transaction/reference ID"
+                  value={transactionId}
+                  onChangeText={setTransactionId}
+                  placeholderTextColor={AppColors.textLight}
+                />
+              </>
+            )}
+
+            {/* Total */}
+            <View style={paymentStyles.totalBox}>
+              <Text style={paymentStyles.totalLabel}>Total Amount</Text>
+              <Text style={paymentStyles.totalAmount}>{formatCurrency(totalAmount)}</Text>
+            </View>
+          </ScrollView>
+
+          <View style={styles.modalFooter}>
+            <TouchableOpacity 
+              style={styles.cancelBtn} 
+              onPress={onClose} 
+              activeOpacity={0.7}
+              disabled={processing}
+            >
+              <Text style={styles.cancelBtnText}>Cancel</Text>
+            </TouchableOpacity>
+            <TouchableOpacity 
+              style={[styles.saveBtn, processing && { opacity: 0.6 }]} 
+              onPress={handlePayment} 
+              activeOpacity={0.7}
+              disabled={processing || selectedFees.size === 0}
+            >
+              {processing ? (
+                <ActivityIndicator size="small" color={AppColors.white} />
+              ) : (
+                <>
+                  <Ionicons name="checkmark-circle" size={18} color={AppColors.white} />
+                  <Text style={styles.saveBtnText}>Record Payment</Text>
+                </>
+              )}
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+const paymentStyles = StyleSheet.create({
+  container: {
+    backgroundColor: AppColors.white,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    maxHeight: '90%',
+    width: '100%',
+  },
+  content: {
+    padding: 20,
+  },
+  sectionTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: AppColors.textPrimary,
+    marginBottom: 12,
+  },
+  feeItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: AppColors.background,
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 8,
+    borderWidth: 2,
+    borderColor: 'transparent',
+  },
+  feeItemSelected: {
+    borderColor: AppColors.primaryBlue,
+    backgroundColor: AppColors.blueLight,
+  },
+  checkbox: {
+    width: 24,
+    height: 24,
+    borderRadius: 6,
+    borderWidth: 2,
+    borderColor: AppColors.primaryBlue,
+    backgroundColor: 'transparent',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  feeItemInfo: {
+    flex: 1,
+    gap: 2,
+  },
+  feeItemLabel: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: AppColors.textPrimary,
+  },
+  feeItemDate: {
+    fontSize: 12,
+    color: AppColors.textSecondary,
+  },
+  feeItemAmount: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: AppColors.primaryBlue,
+  },
+  methodGrid: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  methodBtn: {
+    flex: 1,
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: AppColors.blueLight,
+    borderRadius: 12,
+    paddingVertical: 14,
+    borderWidth: 2,
+    borderColor: 'transparent',
+  },
+  methodBtnActive: {
+    backgroundColor: AppColors.primaryBlue,
+    borderColor: AppColors.primaryBlue,
+  },
+  methodText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: AppColors.primaryBlue,
+  },
+  methodTextActive: {
+    color: AppColors.white,
+  },
+  input: {
+    backgroundColor: AppColors.background,
+    borderRadius: 12,
+    padding: 14,
+    fontSize: 14,
+    color: AppColors.textPrimary,
+    borderWidth: 1,
+    borderColor: AppColors.textLight,
+  },
+  totalBox: {
+    backgroundColor: AppColors.primaryBlue,
+    borderRadius: 16,
+    padding: 20,
+    marginTop: 20,
+    alignItems: 'center',
+    gap: 4,
+  },
+  totalLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: AppColors.white,
+    opacity: 0.8,
+  },
+  totalAmount: {
+    fontSize: 32,
+    fontWeight: '800',
+    color: AppColors.white,
+  },
+});
 
 function SkillNotesModal({
   visible,
@@ -1438,6 +2492,24 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '700',
     color: AppColors.primaryBlue,
+  },
+  documentItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: AppColors.background,
+  },
+  documentLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  documentText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: AppColors.textPrimary,
   },
   comingSoonText: {
     fontSize: 16,

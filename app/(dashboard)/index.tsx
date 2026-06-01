@@ -371,7 +371,11 @@ export default function AdminDashboardScreen() {
 
           {/* Stats grid */}
           <View style={styles.statsGrid}>
-            <View style={[styles.statCard, { backgroundColor: '#E8F4FB' }]}>
+            <TouchableOpacity 
+              style={[styles.statCard, { backgroundColor: '#E8F4FB' }]}
+              activeOpacity={0.7}
+              onPress={() => router.push('/(dashboard)/students')}
+            >
               <View style={styles.statHeader}>
                 <View style={[styles.statIconBox, { backgroundColor: '#C2E4F5' }]}>
                   <Ionicons name="school-outline" size={16} color="#2A7FA0" />
@@ -390,7 +394,7 @@ export default function AdminDashboardScreen() {
               ) : (
                 <Text style={styles.statSubtext}>No students yet</Text>
               )}
-            </View>
+            </TouchableOpacity>
 
             <TouchableOpacity
               style={[styles.statCard, { backgroundColor: '#D4F4E8' }]}

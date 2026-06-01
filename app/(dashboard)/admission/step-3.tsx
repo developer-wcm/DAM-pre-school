@@ -11,7 +11,9 @@ import {
     TouchableOpacity,
     View,
 } from 'react-native';
-import { COLORS } from '../../constants/admissionTheme';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { COLORS } from '../../../constants/admissionTheme';
+import { useAdmission } from '../../../context/admission';
 
 const TOTAL_STEPS = 5;
 const CURRENT_STEP = 3;
@@ -87,13 +89,23 @@ function StepIndicator({ current, total, label }: { current: number; total: numb
 // ─── Main screen ─────────────────────────────────────────────────────────────
 export default function AdmissionStep3() {
   const router = useRouter();
+  const { admissionData, updateAdmissionData } = useAdmission();
+  const insets = useSafeAreaInsets();
 
-  const [admissionDate] = useState('06/01/2025');
+  const {
+    admissionDate,
+    selectedClass,
+    paymentCycle,
+    autoReminders,
+    discountEnabled,
+  } = admissionData;
+
   const [classDropdownOpen, setClassDropdownOpen] = useState(false);
-  const [selectedClass, setSelectedClass] = useState('Junior KG');
-  const [paymentCycle, setPaymentCycle] = useState('Monthly');
-  const [autoReminders, setAutoReminders] = useState(true);
-  const [discountEnabled, setDiscountEnabled] = useState(false);
+
+  const setSelectedClass = (val: string) => updateAdmissionData({ selectedClass: val });
+  const setPaymentCycle = (val: string) => updateAdmissionData({ paymentCycle: val });
+  const setAutoReminders = (val: boolean) => updateAdmissionData({ autoReminders: val });
+  const setDiscountEnabled = (val: boolean) => updateAdmissionData({ discountEnabled: val });
 
   const remainingBalance = 49500; // placeholder — will come from fee config
   const installments = buildInstallments(remainingBalance, paymentCycle);
@@ -146,7 +158,9 @@ export default function AdmissionStep3() {
                 Date of Birth <Text style={styles.required}>*</Text>
               </Text>
               <TouchableOpacity style={[styles.dropdownBtn, styles.dropdownDisabled]} activeOpacity={1}>
-                <Text style={[styles.dropdownBtnText, { color: COLORS.gray }]}>Auto-filled from Step 1</Text>
+                <Text style={[styles.dropdownBtnText, { color: admissionData.dob ? COLORS.textPrimary : COLORS.gray }]}>
+                  {admissionData.dob || 'Auto-filled from Step 1'}
+                </Text>
                 <Text style={styles.dropdownChevron}>▼</Text>
               </TouchableOpacity>
             </View>
@@ -281,7 +295,7 @@ export default function AdmissionStep3() {
         </ScrollView>
 
         {/* Bottom buttons */}
-        <View style={styles.stickyBottom}>
+        <View style={[styles.stickyBottom, { bottom: insets.bottom + 16 }]}> 
           <TouchableOpacity
             style={styles.backBtnBottom}
             onPress={() => router.back()}
@@ -293,7 +307,7 @@ export default function AdmissionStep3() {
           <TouchableOpacity
             style={styles.nextBtnWrapper}
             activeOpacity={0.85}
-            onPress={() => router.push('/admission/step-4' as any)}
+            onPress={() => router.push('/(dashboard)/admission/step-4' as any)}
           >
             <LinearGradient
               colors={[COLORS.primary, COLORS.primaryLight]}
@@ -533,14 +547,17 @@ const styles = StyleSheet.create({
 
   // Bottom buttons
   stickyBottom: {
+    position: 'absolute',
+    left: 20,
+    right: 20,
+    bottom: 110,
     flexDirection: 'row',
-    paddingHorizontal: 20,
     paddingVertical: 16,
     gap: 12,
     backgroundColor: 'transparent',
   },
   backBtnBottom: {
-    flex: 1, 
+    flex: 1.2, 
     borderRadius: 50, 
     paddingVertical: 16,
     borderWidth: 2, 
@@ -550,7 +567,7 @@ const styles = StyleSheet.create({
   },
   backBtnText: { color: COLORS.primary, fontSize: 16, fontWeight: '700' },
   nextBtnWrapper: {
-    flex: 2, 
+    flex: 1.6, 
     borderRadius: 50, 
     overflow: 'hidden',
     shadowColor: COLORS.primary,

@@ -15,7 +15,9 @@ import {
     TouchableOpacity,
     View,
 } from 'react-native';
-import { COLORS } from '../../constants/admissionTheme';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { COLORS } from '../../../constants/admissionTheme';
+import { useAdmission } from '../../../context/admission';
 
 const TOTAL_STEPS = 5;
 const CURRENT_STEP = 4;
@@ -407,21 +409,26 @@ function DocSection({
 // ─── Main screen ─────────────────────────────────────────────────────────────
 export default function AdmissionStep4() {
   const router = useRouter();
-  const [files, setFiles] = useState<Record<string, UploadedFile>>({});
+  const { admissionData, updateAdmissionData } = useAdmission();
+  const insets = useSafeAreaInsets();
+
+  const { files, tcGrade } = admissionData;
   const [activeDoc, setActiveDoc] = useState<DocItem | null>(null);
-  const [tcGrade, setTcGrade] = useState<TCGrade>(null);
+
+  const setTcGrade = (grade: TCGrade) => {
+    updateAdmissionData({ tcGrade: grade });
+  };
 
   const saveFile = (docId: string, file: UploadedFile) => {
-    setFiles((prev) => ({ ...prev, [docId]: file }));
+    const newFiles = { ...files, [docId]: file };
+    updateAdmissionData({ files: newFiles });
     setActiveDoc(null);
   };
 
   const removeFile = (docId: string) => {
-    setFiles((prev) => {
-      const next = { ...prev };
-      delete next[docId];
-      return next;
-    });
+    const newFiles = { ...files };
+    delete newFiles[docId];
+    updateAdmissionData({ files: newFiles });
     setActiveDoc(null);
   };
 
@@ -596,14 +603,14 @@ export default function AdmissionStep4() {
         </ScrollView>
 
         {/* Bottom buttons */}
-        <View style={styles.stickyBottom}>
+        <View style={[styles.stickyBottom, { bottom: insets.bottom + 16 }]}> 
           <TouchableOpacity style={styles.backBtnBottom} onPress={() => router.back()} activeOpacity={0.8}>
             <Text style={styles.backBtnText}>Back</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.nextBtnWrapper}
             activeOpacity={0.85}
-            onPress={() => router.push('/admission/step-5' as any)}
+            onPress={() => router.push('/(dashboard)/admission/step-5' as any)}
           >
             <LinearGradient
               colors={[COLORS.primary, COLORS.primaryLight]}
@@ -680,7 +687,7 @@ const styles = StyleSheet.create({
   stepLabel: { fontSize: 12, fontWeight: '600', color: COLORS.primary },
 
   // Scroll
-  scrollContent: { paddingHorizontal: 20, paddingBottom: 20, gap: 16 },
+  scrollContent: { paddingHorizontal: 20, paddingBottom: 140, gap: 16 },
 
   // Banners
   infoBanner: {
@@ -817,17 +824,23 @@ const styles = StyleSheet.create({
 
   // Bottom buttons
   stickyBottom: {
-    flexDirection: 'row', paddingHorizontal: 20, paddingVertical: 16,
-    gap: 12, backgroundColor: 'transparent',
+    position: 'absolute',
+    left: 20,
+    right: 20,
+    bottom: 110,
+    flexDirection: 'row',
+    paddingVertical: 16,
+    gap: 12,
+    backgroundColor: 'transparent',
   },
   backBtnBottom: {
-    flex: 1, borderRadius: 50, paddingVertical: 16,
+    flex: 1.2, borderRadius: 50, paddingVertical: 16,
     borderWidth: 2, borderColor: COLORS.primary,
     alignItems: 'center', justifyContent: 'center',
   },
   backBtnText: { color: COLORS.primary, fontSize: 16, fontWeight: '700' },
   nextBtnWrapper: {
-    flex: 2, borderRadius: 50, overflow: 'hidden',
+    flex: 1.6, borderRadius: 50, overflow: 'hidden',
     shadowColor: COLORS.secondary, shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.35, shadowRadius: 12, elevation: 8,
   },

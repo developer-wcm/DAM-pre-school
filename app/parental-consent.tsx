@@ -179,7 +179,7 @@ export default function ParentalConsentScreen() {
         ) : (
           <TouchableOpacity
             activeOpacity={0.85}
-            onPress={() => router.push('/admission/thank-you-match')}
+            onPress={() => router.push('/(dashboard)/students')}
           >
             <LinearGradient
               colors={[COLORS.primary, COLORS.primaryLight]}

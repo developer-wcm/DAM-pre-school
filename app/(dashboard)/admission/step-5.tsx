@@ -11,7 +11,9 @@ import {
     TouchableOpacity,
     View
 } from 'react-native';
-import { COLORS } from '../../constants/admissionTheme';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { COLORS } from '../../../constants/admissionTheme';
+import { useAdmission } from '../../../context/admission';
 
 const TOTAL_STEPS = 5;
 const CURRENT_STEP = 5;
@@ -109,7 +111,9 @@ function DocumentItem({ name, status }: { name: string; status: 'uploaded' | 'pe
 // ─── Main screen ─────────────────────────────────────────────────────────────
 export default function AdmissionStep5() {
   const router = useRouter();
+  const { admissionData, resetAdmissionData } = useAdmission();
   const [agreed, setAgreed] = useState(false);
+  const insets = useSafeAreaInsets();
 
   const handleSubmit = () => {
     console.log('Submit button pressed, agreed:', agreed);
@@ -118,15 +122,15 @@ export default function AdmissionStep5() {
       return;
     }
     
-    console.log('Navigating to parental consent screen...');
+    console.log('Submitting application and returning to students list...');
     
-    // Navigate to parental consent as per the correct new admission flow
     try {
-      router.push('/parental-consent');
-      console.log('Navigation to parental consent successful');
+      resetAdmissionData();
+      router.replace('/(dashboard)/students');
+      console.log('Navigation to students list successful');
     } catch (error) {
       console.error('Navigation error:', error);
-      Alert.alert('Navigation Error', 'Could not navigate to parental consent screen');
+      Alert.alert('Navigation Error', 'Could not navigate to students screen');
     }
   };
 
@@ -157,16 +161,20 @@ export default function AdmissionStep5() {
             title="Student Info"
             icon="🎓"
             iconBg={COLORS.offWhite}
-            onEdit={() => router.push('/admission/step-1' as any)}
+            onEdit={() => router.push('/(dashboard)/admission/step-1' as any)}
           >
             <View style={styles.studentInfoBox}>
               <View style={styles.avatarCircle}>
-                <Text style={styles.avatarText}>👧</Text>
+                <Text style={styles.avatarText}>
+                  {admissionData.gender === 'Female' ? '👧' : '👦'}
+                </Text>
               </View>
               <View style={styles.studentDetails}>
-                <Text style={styles.studentName}>Priya Kumar</Text>
-                <InfoRow icon="📅" label="" value="15 June 2021 (3y 2m)" />
-                <InfoRow icon="⚧" label="" value="Female" />
+                <Text style={styles.studentName}>
+                  {`${admissionData.firstName} ${admissionData.middleName ? admissionData.middleName + ' ' : ''}${admissionData.lastName}`.trim() || 'No Name'}
+                </Text>
+                <InfoRow icon="📅" label="" value={admissionData.dob || 'No DOB'} />
+                <InfoRow icon="⚧" label="" value={admissionData.gender || 'No Gender'} />
               </View>
             </View>
           </ReviewCard>
@@ -176,32 +184,61 @@ export default function AdmissionStep5() {
             title="Parent Info"
             icon="👨‍👩‍👧"
             iconBg={COLORS.warningLight}
-            onEdit={() => router.push('/admission/step-2' as any)}
+            onEdit={() => router.push('/(dashboard)/admission/step-2' as any)}
           >
             <View style={styles.parentBox}>
-              <View style={styles.parentItem}>
-                <View style={styles.parentBadge}>
-                  <Text style={styles.parentBadgeText}>FA</Text>
+              {admissionData.father.fullName ? (
+                <View style={styles.parentItem}>
+                  <View style={styles.parentBadge}>
+                    <Text style={styles.parentBadgeText}>FA</Text>
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.parentName}>{admissionData.father.fullName}</Text>
+                    <Text style={styles.parentRole}>Father</Text>
+                    <InfoRow icon="📞" label="" value={admissionData.father.phone || 'No Phone'} />
+                  </View>
                 </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.parentName}>Ramesh Kumar</Text>
-                  <Text style={styles.parentRole}>Father</Text>
-                  <InfoRow icon="📞" label="" value="+91 98765 43210" />
-                </View>
-              </View>
+              ) : null}
 
-              <View style={styles.divider} />
+              {admissionData.father.fullName && admissionData.mother.fullName ? (
+                <View style={styles.divider} />
+              ) : null}
 
-              <View style={styles.parentItem}>
-                <View style={[styles.parentBadge, { backgroundColor: COLORS.errorLight }]}>
-                  <Text style={[styles.parentBadgeText, { color: COLORS.error }]}>MO</Text>
+              {admissionData.mother.fullName ? (
+                <View style={styles.parentItem}>
+                  <View style={[styles.parentBadge, { backgroundColor: COLORS.errorLight }]}>
+                    <Text style={[styles.parentBadgeText, { color: COLORS.error }]}>MO</Text>
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.parentName}>{admissionData.mother.fullName}</Text>
+                    <Text style={styles.parentRole}>Mother</Text>
+                    <InfoRow icon="📞" label="" value={admissionData.mother.phone || 'No Phone'} />
+                  </View>
                 </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.parentName}>Sunita Kumar</Text>
-                  <Text style={styles.parentRole}>Mother</Text>
-                  <InfoRow icon="📞" label="" value="+91 98765 12345" />
+              ) : null}
+
+              {((admissionData.father.fullName || admissionData.mother.fullName) && admissionData.guardian.fullName) ? (
+                <View style={styles.divider} />
+              ) : null}
+
+              {admissionData.guardian.fullName ? (
+                <View style={styles.parentItem}>
+                  <View style={[styles.parentBadge, { backgroundColor: COLORS.successLight }]}>
+                    <Text style={[styles.parentBadgeText, { color: COLORS.success }]}>GU</Text>
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.parentName}>{admissionData.guardian.fullName}</Text>
+                    <Text style={styles.parentRole}>Guardian</Text>
+                    <InfoRow icon="📞" label="" value={admissionData.guardian.phone || 'No Phone'} />
+                  </View>
                 </View>
-              </View>
+              ) : null}
+
+              {!admissionData.father.fullName && !admissionData.mother.fullName && !admissionData.guardian.fullName ? (
+                <Text style={{ color: COLORS.gray, fontStyle: 'italic', paddingVertical: 8 }}>
+                  No parent information provided
+                </Text>
+              ) : null}
             </View>
           </ReviewCard>
 
@@ -210,27 +247,33 @@ export default function AdmissionStep5() {
             title="Payment Plan"
             icon="💳"
             iconBg={COLORS.successLight}
-            onEdit={() => router.push('/admission/step-3' as any)}
+            onEdit={() => router.push('/(dashboard)/admission/step-3' as any)}
           >
             <View style={styles.feeBox}>
               <View style={styles.feeRow}>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.feeLabel}>Class Assigned</Text>
-                  <Text style={styles.feeValue}>Junior KG</Text>
+                  <Text style={styles.feeValue}>{admissionData.selectedClass}</Text>
                   <Text style={styles.feeSubtext}>Section A</Text>
                 </View>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.feeLabel}>Billing Cycle</Text>
-                  <Text style={styles.feeValue}>Monthly</Text>
-                  <Text style={styles.feeSubtext}>10 installments</Text>
+                  <Text style={styles.feeValue}>{admissionData.paymentCycle}</Text>
+                  <Text style={styles.feeSubtext}>
+                    {admissionData.paymentCycle === 'Monthly' ? '10 installments' : '4 installments'}
+                  </Text>
                 </View>
               </View>
 
               <View style={styles.divider} />
 
               <View style={styles.totalFeeRow}>
-                <Text style={styles.totalFeeLabel}>Total Annual Fee</Text>
-                <Text style={styles.totalFeeValue}>₹49,500</Text>
+                <Text style={styles.totalFeeLabel}>
+                  Total Annual Fee{admissionData.discountEnabled ? ' (Sibling Discount)' : ''}
+                </Text>
+                <Text style={styles.totalFeeValue}>
+                  {admissionData.discountEnabled ? '₹44,550' : '₹49,500'}
+                </Text>
               </View>
             </View>
           </ReviewCard>
@@ -240,12 +283,18 @@ export default function AdmissionStep5() {
             title="Documents"
             icon="📋"
             iconBg={COLORS.successLight}
-            onEdit={() => router.push('/admission/step-4' as any)}
+            onEdit={() => router.push('/(dashboard)/admission/step-4' as any)}
           >
             <View style={styles.docList}>
-              <DocumentItem name="Birth Certificate.pdf" status="uploaded" />
-              <DocumentItem name="Student_Photo.jpg" status="uploaded" />
-              <DocumentItem name="Medical_Certificate.pdf" status="pending" />
+              {Object.keys(admissionData.files).length > 0 ? (
+                Object.entries(admissionData.files).map(([key, file]) => (
+                  <DocumentItem key={key} name={file.name} status="uploaded" />
+                ))
+              ) : (
+                <Text style={{ color: COLORS.gray, fontStyle: 'italic', paddingVertical: 8 }}>
+                  No documents uploaded
+                </Text>
+              )}
             </View>
           </ReviewCard>
 
@@ -267,7 +316,7 @@ export default function AdmissionStep5() {
         </ScrollView>
 
         {/* Bottom buttons */}
-        <View style={styles.stickyBottom}>
+        <View style={[styles.stickyBottom, { bottom: insets.bottom + 16 }]}> 
           <TouchableOpacity style={styles.backBtnBottom} onPress={() => router.back()} activeOpacity={0.8}>
             <Text style={styles.backBtnText}>Back</Text>
           </TouchableOpacity>
@@ -339,7 +388,7 @@ const styles = StyleSheet.create({
   stepLabel: { fontSize: 12, fontWeight: '600', color: COLORS.primary },
 
   // Scroll
-  scrollContent: { paddingHorizontal: 20, paddingBottom: 20, gap: 16 },
+  scrollContent: { paddingHorizontal: 20, paddingBottom: 140, gap: 16 },
 
   // Card
   card: {
@@ -496,14 +545,17 @@ const styles = StyleSheet.create({
 
   // Bottom buttons
   stickyBottom: {
-    flexDirection: 'row', 
-    paddingHorizontal: 20, 
+    position: 'absolute',
+    left: 20,
+    right: 20,
+    bottom: 110,
+    flexDirection: 'row',
     paddingVertical: 16,
-    gap: 12, 
+    gap: 12,
     backgroundColor: 'transparent',
   },
   backBtnBottom: {
-    flex: 1, 
+    flex: 1.2, 
     borderRadius: 50, 
     paddingVertical: 16,
     borderWidth: 2, 
@@ -513,7 +565,7 @@ const styles = StyleSheet.create({
   },
   backBtnText: { color: COLORS.primary, fontSize: 16, fontWeight: '700' },
   submitBtnWrapper: {
-    flex: 2, 
+    flex: 1.6, 
     borderRadius: 50, 
     overflow: 'hidden',
     shadowColor: COLORS.primary, 

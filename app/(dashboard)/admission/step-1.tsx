@@ -1,6 +1,5 @@
-import { LinearGradient } from 'expo-linear-gradient';
+import { LinearGradient } from 'expo-linear-gradient'; 
 import { useRouter } from 'expo-router';
-import { useState } from 'react';
 import {
     KeyboardAvoidingView,
     Platform,
@@ -11,7 +10,9 @@ import {
     TouchableOpacity,
     View,
 } from 'react-native';
-import { COLORS } from '../../constants/admissionTheme';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { COLORS } from '../../../constants/admissionTheme';
+import { useAdmission } from '../../../context/admission';
 
 const TOTAL_STEPS = 5;
 const CURRENT_STEP = 1;
@@ -20,23 +21,36 @@ type Gender = 'Male' | 'Female';
 
 export default function AdmissionStep1() {
   const router = useRouter();
+  const { admissionData, updateAdmissionData } = useAdmission();
+  const insets = useSafeAreaInsets();
 
-  const [firstName, setFirstName] = useState('');
-  const [middleName, setMiddleName] = useState('');
-  const [lastName, setLastName] = useState('');
-  const [dob, setDob] = useState('');
-  const [gender, setGender] = useState<Gender | null>(null);
-  const [motherTongue, setMotherTongue] = useState('');
-  const [nationality, setNationality] = useState('');
-  const [address, setAddress] = useState('');
-  const [aadhaar, setAadhaar] = useState('');
+  const {
+    firstName,
+    middleName,
+    lastName,
+    dob,
+    gender,
+    motherTongue,
+    nationality,
+    address,
+    aadhaar,
+  } = admissionData;
+
+  const setFirstName = (val: string) => updateAdmissionData({ firstName: val });
+  const setMiddleName = (val: string) => updateAdmissionData({ middleName: val });
+  const setLastName = (val: string) => updateAdmissionData({ lastName: val });
+  const setGender = (val: Gender | null) => updateAdmissionData({ gender: val });
+  const setMotherTongue = (val: string) => updateAdmissionData({ motherTongue: val });
+  const setNationality = (val: string) => updateAdmissionData({ nationality: val });
+  const setAddress = (val: string) => updateAdmissionData({ address: val });
+  const setAadhaar = (val: string) => updateAdmissionData({ aadhaar: val });
 
   const formatDob = (text: string) => {
     const digits = text.replace(/\D/g, '').slice(0, 8);
     let formatted = digits;
     if (digits.length > 4) formatted = digits.slice(0, 2) + '/' + digits.slice(2, 4) + '/' + digits.slice(4);
     else if (digits.length > 2) formatted = digits.slice(0, 2) + '/' + digits.slice(2);
-    setDob(formatted);
+    updateAdmissionData({ dob: formatted });
   };
 
   return (
@@ -243,7 +257,7 @@ export default function AdmissionStep1() {
         </ScrollView>
 
         {/* Bottom buttons */}
-        <View style={styles.stickyBottom}>
+        <View style={[styles.stickyBottom, { bottom: insets.bottom + 16 }]}> 
           <TouchableOpacity
             style={styles.backBtnBottom}
             onPress={() => router.back()}
@@ -255,7 +269,7 @@ export default function AdmissionStep1() {
           <TouchableOpacity
             style={styles.nextBtnWrapper}
             activeOpacity={0.85}
-            onPress={() => router.push('/admission/step-2')}
+            onPress={() => router.push('/(dashboard)/admission/step-2')}
           >
             <LinearGradient
               colors={[COLORS.primary, COLORS.primaryLight]}
@@ -383,7 +397,7 @@ const styles = StyleSheet.create({
   // Scroll
   scrollContent: {
     paddingHorizontal: 20,
-    paddingBottom: 20,
+    paddingBottom: 140,
   },
 
   // Card
@@ -515,14 +529,17 @@ const styles = StyleSheet.create({
 
   // Bottom buttons
   stickyBottom: {
+    position: 'absolute',
+    left: 20,
+    right: 20,
+    bottom: 110,
     flexDirection: 'row',
-    paddingHorizontal: 20,
     paddingVertical: 16,
     gap: 12,
     backgroundColor: 'transparent',
   },
   backBtnBottom: {
-    flex: 1,
+    flex: 1.2,
     borderRadius: 50,
     paddingVertical: 16,
     borderWidth: 2,
@@ -536,7 +553,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   nextBtnWrapper: {
-    flex: 2,
+    flex: 1.6,
     borderRadius: 50,
     overflow: 'hidden',
     shadowColor: COLORS.primary,

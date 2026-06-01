@@ -54,7 +54,7 @@ export default function AdmissionChoiceScreen() {
           {/* New Admission */}
           <TouchableOpacity
             style={styles.choiceCard}
-            onPress={() => router.push('/admission/step-1')}
+            onPress={() => router.push('/(dashboard)/admission/step-1')}
             activeOpacity={0.8}
           >
             <View style={[styles.choiceIcon, { backgroundColor: COLORS.warningLight }]}>

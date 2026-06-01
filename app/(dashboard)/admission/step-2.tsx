@@ -1,6 +1,5 @@
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
-import { useState } from 'react';
 import {
     KeyboardAvoidingView,
     Platform,
@@ -11,7 +10,9 @@ import {
     TouchableOpacity,
     View,
 } from 'react-native';
-import { COLORS } from '../../constants/admissionTheme';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { COLORS } from '../../../constants/admissionTheme';
+import { useAdmission } from '../../../context/admission';
 
 const TOTAL_STEPS = 5;
 const CURRENT_STEP = 2;
@@ -133,20 +134,30 @@ function ParentSection({
 
 export default function AdmissionStep2() {
   const router = useRouter();
+  const { admissionData, updateAdmissionData } = useAdmission();
+  const insets = useSafeAreaInsets();
 
-  const [father, setFather] = useState<ParentFields>(emptyParent());
-  const [mother, setMother] = useState<ParentFields>(emptyParent());
-  const [guardian, setGuardian] = useState<ParentFields>(emptyParent());
-  const [guardianExpanded, setGuardianExpanded] = useState(false);
+  const { father, mother, guardian, guardianExpanded } = admissionData;
 
-  const updateFather = (field: keyof ParentFields, value: string) =>
-    setFather((prev) => ({ ...prev, [field]: value }));
+  const setGuardianExpanded = (val: boolean | ((prev: boolean) => boolean)) => {
+    const nextVal = typeof val === 'function' ? val(guardianExpanded) : val;
+    updateAdmissionData({ guardianExpanded: nextVal });
+  };
 
-  const updateMother = (field: keyof ParentFields, value: string) =>
-    setMother((prev) => ({ ...prev, [field]: value }));
+  const updateFather = (field: keyof ParentFields, value: string) => {
+    const newFather = { ...father, [field]: value };
+    updateAdmissionData({ father: newFather });
+  };
 
-  const updateGuardian = (field: keyof ParentFields, value: string) =>
-    setGuardian((prev) => ({ ...prev, [field]: value }));
+  const updateMother = (field: keyof ParentFields, value: string) => {
+    const newMother = { ...mother, [field]: value };
+    updateAdmissionData({ mother: newMother });
+  };
+
+  const updateGuardian = (field: keyof ParentFields, value: string) => {
+    const newGuardian = { ...guardian, [field]: value };
+    updateAdmissionData({ guardian: newGuardian });
+  };
 
   return (
     <LinearGradient colors={['#F5F7FA', '#E8EAED', '#F0F2F5']} style={styles.container}>
@@ -267,7 +278,7 @@ export default function AdmissionStep2() {
         </ScrollView>
 
         {/* Bottom buttons */}
-        <View style={styles.stickyBottom}>
+        <View style={[styles.stickyBottom, { bottom: insets.bottom + 16 }]}> 
           <TouchableOpacity
             style={styles.backBtnBottom}
             onPress={() => router.back()}
@@ -279,7 +290,7 @@ export default function AdmissionStep2() {
           <TouchableOpacity
             style={styles.nextBtnWrapper}
             activeOpacity={0.85}
-            onPress={() => router.push('/admission/step-3' as any)}
+            onPress={() => router.push('/(dashboard)/admission/step-3' as any)}
           >
             <LinearGradient
               colors={[COLORS.primary, COLORS.primaryLight]}
@@ -518,14 +529,17 @@ const styles = StyleSheet.create({
 
   // Bottom buttons
   stickyBottom: {
+    position: 'absolute',
+    left: 20,
+    right: 20,
+    bottom: 110,
     flexDirection: 'row',
-    paddingHorizontal: 20,
     paddingVertical: 16,
     gap: 12,
     backgroundColor: 'transparent',
   },
   backBtnBottom: {
-    flex: 1,
+    flex: 1.2,
     borderRadius: 50,
     paddingVertical: 16,
     borderWidth: 2,
@@ -539,7 +553,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   nextBtnWrapper: {
-    flex: 2,
+    flex: 1.6,
     borderRadius: 50,
     overflow: 'hidden',
     shadowColor: COLORS.primary,

@@ -31,13 +31,13 @@ export default function DashboardLayout() {
         }}
       />
       <Tabs.Screen
-        name="fees"
+        name="students"
         options={{
-          title: 'Fees',
+          title: 'Students',
           tabBarIcon: ({ color, focused }) => (
             <View style={[styles.iconContainer, focused && styles.iconContainerActive]}>
               <Ionicons
-                name={focused ? 'wallet' : 'wallet-outline'}
+                name={focused ? 'school' : 'school-outline'}
                 size={22}
                 color={focused ? '#4F46E5' : color}
               />
@@ -46,13 +46,13 @@ export default function DashboardLayout() {
         }}
       />
       <Tabs.Screen
-        name="students"
+        name="fees"
         options={{
-          title: 'Students',
+          title: 'Fees',
           tabBarIcon: ({ color, focused }) => (
             <View style={[styles.iconContainer, focused && styles.iconContainerActive]}>
               <Ionicons
-                name={focused ? 'school' : 'school-outline'}
+                name={focused ? 'wallet' : 'wallet-outline'}
                 size={22}
                 color={focused ? '#4F46E5' : color}
               />
@@ -76,6 +76,13 @@ export default function DashboardLayout() {
         }}
       />
       {/* Hide stack screens from tab bar */}
+      {/* Hide the admission stack from the tab bar */}
+      <Tabs.Screen
+        name="admission"
+        options={{
+          href: null,
+        }}
+      />
       <Tabs.Screen
         name="student-profile"
         options={{
@@ -89,12 +96,7 @@ export default function DashboardLayout() {
           tabBarStyle: { display: 'none' },
         }}
       />
-      <Tabs.Screen
-        name="fee"
-        options={{
-          href: null,
-        }}
-      />
+
     </Tabs>
   );
 }
