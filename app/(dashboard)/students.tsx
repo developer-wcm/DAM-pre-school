@@ -13,7 +13,6 @@ import {
 } from 'react-native';
 import { AppColors, AppShadows } from '../../constants/theme';
 import { useAdmission } from '../../context/admission';
-import { useAuth } from '../../context/auth';
 import { supabase } from '../../lib/supabase';
 
 interface Student {
@@ -49,7 +48,6 @@ function getInitials(name: string): string {
 }
 
 export default function StudentsScreen() {
-  const { profile } = useAuth();
   const router = useRouter();
   const { resetAdmissionData } = useAdmission();
   const [students, setStudents] = useState<Student[]>([]);
@@ -59,18 +57,24 @@ export default function StudentsScreen() {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedClass, setSelectedClass] = useState('all');
 
-  const schoolId = profile?.school_id;
-
   async function fetchStudents() {
-    if (!schoolId) return;
     try {
-      const { data, error } = await supabase
-        .from('students')
-        .select('id, full_name, class, roll_number, status')
-        .eq('school_id', schoolId)
-        .eq('status', 'active')
-        .order('class', { ascending: true })
-        .order('roll_number', { ascending: true });
+      const studentsRpcRes = await supabase.rpc('get_student_profiles');
+      let data = studentsRpcRes.data;
+      let error = studentsRpcRes.error;
+
+      if (error) {
+        console.warn('[Students] Student RPC unavailable, falling back to students query:', error.message);
+        const fallbackRes = await supabase
+          .from('students')
+          .select('id, full_name, class, roll_number, status')
+          .eq('status', 'active')
+          .order('class', { ascending: true })
+          .order('roll_number', { ascending: true });
+
+        data = fallbackRes.data;
+        error = fallbackRes.error;
+      }
 
       if (error) throw error;
       setStudents(data ?? []);
@@ -85,7 +89,7 @@ export default function StudentsScreen() {
 
   useEffect(() => {
     fetchStudents();
-  }, [schoolId]);
+  }, []);
 
   // Filter students based on search and class
   useEffect(() => {
@@ -112,7 +116,7 @@ export default function StudentsScreen() {
   const onRefresh = useCallback(() => {
     setRefreshing(true);
     fetchStudents();
-  }, [schoolId]);
+  }, []);
 
   const renderStudent = ({ item }: { item: Student }) => {
     const initials = getInitials(item.full_name);

@@ -17,15 +17,16 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { COLORS } from '../constants/admissionTheme';
 import { IMAGES } from '../constants/images';
+import { DEFAULT_SCHOOL_NAME } from '../constants/school';
 import { useAuth } from '../context/auth';
 import { supabase } from '../lib/supabase';
 
 export default function AccountPendingScreen() {
   const router = useRouter();
-  const { user, profile, signOut } = useAuth();
+  const { user, signOut } = useAuth();
 
   const [checking, setChecking] = useState(false);
-  const [schoolName, setSchoolName] = useState('Your School');
+  const [schoolName] = useState(DEFAULT_SCHOOL_NAME);
 
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const scaleAnim = useRef(new Animated.Value(0.8)).current;
@@ -152,52 +153,6 @@ export default function AccountPendingScreen() {
       ])
     ).start();
   }, []);
-
-  // =========================
-  // LOAD SCHOOL DETAILS
-  // =========================
-  useEffect(() => {
-    async function loadSchoolDetails() {
-      try {
-        const schoolId = profile?.school_id;
-
-        if (!schoolId) {
-          setSchoolName('Your School');
-          return;
-        }
-
-        // Search using join code
-        const { data: joinData } = await supabase
-          .from('schools')
-          .select('name')
-          .eq('join_code', schoolId)
-          .maybeSingle();
-
-        if (joinData?.name) {
-          setSchoolName(joinData.name);
-          return;
-        }
-
-        // Search using id
-        const { data: idData } = await supabase
-          .from('schools')
-          .select('name')
-          .eq('id', schoolId)
-          .maybeSingle();
-
-        if (idData?.name) {
-          setSchoolName(idData.name);
-          return;
-        }
-
-        setSchoolName('Your School');
-      } catch (error) {
-        console.log('School fetch error:', error);
-      }
-    }
-
-    loadSchoolDetails();
-  }, [profile?.school_id]);
 
   return (
     <SafeAreaView style={styles.container}>

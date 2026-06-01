@@ -20,7 +20,7 @@ SELECT
     s.updated_at
 FROM public.students s
 LEFT JOIN public.profiles p ON s.parent_id = p.id
-WHERE s.school_id = 'DEMO01'  -- Replace with actual school_id
+WHERE s.school_id = 'DEM001'  -- Replace with actual school_id
 ORDER BY s.full_name;
 
 -- ============================================================
@@ -32,7 +32,7 @@ SELECT
     SUM(CASE WHEN status = 'active' THEN 1 ELSE 0 END) as active_students,
     SUM(CASE WHEN status = 'inactive' THEN 1 ELSE 0 END) as inactive_students
 FROM public.students
-WHERE school_id = 'DEMO01'
+WHERE school_id = 'DEM001'
 GROUP BY class
 ORDER BY class;
 
@@ -56,7 +56,7 @@ SELECT
     ) as attendance_percentage
 FROM public.students s
 LEFT JOIN public.attendance a ON s.id = a.student_id
-WHERE s.school_id = 'DEMO01'
+WHERE s.school_id = 'DEM001'
 GROUP BY s.id, s.full_name, s.class, s.roll_number, s.status
 ORDER BY s.full_name;
 
@@ -76,7 +76,7 @@ SELECT
     SUM(f.amount) FILTER (WHERE f.paid = false) as pending_amount
 FROM public.students s
 LEFT JOIN public.fees f ON s.id = f.student_id
-WHERE s.school_id = 'DEMO01'
+WHERE s.school_id = 'DEM001'
 GROUP BY s.id, s.full_name, s.class, s.roll_number, s.status
 ORDER BY s.full_name;
 
@@ -96,7 +96,7 @@ SELECT
     p.phone as parent_phone
 FROM public.students s
 LEFT JOIN public.profiles p ON s.parent_id = p.id
-WHERE s.school_id = 'DEMO01' 
+WHERE s.school_id = 'DEM001' 
   AND s.class = 'JKG'  -- Replace with desired class
   AND s.status = 'active'  -- Only active students
 ORDER BY s.roll_number;
@@ -115,7 +115,7 @@ SELECT
     p.phone as parent_phone
 FROM public.students s
 LEFT JOIN public.profiles p ON s.parent_id = p.id
-WHERE s.school_id = 'DEMO01'
+WHERE s.school_id = 'DEM001'
   AND s.admission_date >= CURRENT_DATE - INTERVAL '30 days'
 ORDER BY s.admission_date DESC;
 

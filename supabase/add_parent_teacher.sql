@@ -50,13 +50,13 @@ BEGIN
     parent_user_id, 
     'Demo Parent', 
     'parent', 
-    'DEMO01', 
+    'DEM001', 
     true,
     '123456',
     now() + interval '1 year'
   )
   ON CONFLICT (id) DO UPDATE
-  SET full_name = 'Demo Parent', role = 'parent', school_id = 'DEMO01', approved = true,
+  SET full_name = 'Demo Parent', role = 'parent', school_id = 'DEM001', approved = true,
       verification_code = '123456', code_expires_at = now() + interval '1 year';
 END $$;
 
@@ -97,12 +97,12 @@ BEGIN
     teacher_user_id, 
     'Demo Teacher', 
     'teacher', 
-    'DEMO01', 
+    'DEM001', 
     true,
     '654321',
     now() + interval '1 year'
   )
   ON CONFLICT (id) DO UPDATE
-  SET full_name = 'Demo Teacher', role = 'teacher', school_id = 'DEMO01', approved = true,
+  SET full_name = 'Demo Teacher', role = 'teacher', school_id = 'DEM001', approved = true,
       verification_code = '654321', code_expires_at = now() + interval '1 year';
 END $$;

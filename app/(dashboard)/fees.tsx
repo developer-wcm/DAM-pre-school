@@ -14,7 +14,7 @@ import {
     View,
 } from 'react-native';
 import { AppColors, AppShadows } from '../../constants/theme';
-import { useAuth } from '../../context/auth';
+import { DEFAULT_SCHOOL_ID } from '../../constants/school';
 import { supabase } from '../../lib/supabase';
 
 interface ClassFeeData {
@@ -77,9 +77,8 @@ function getInitials(name: string): string {
 }
 
 export default function FeesScreen() {
-  const { profile } = useAuth();
   const router = useRouter();
-  const schoolId = profile?.school_id;
+  const schoolId = DEFAULT_SCHOOL_ID;
 
   const [stats, setStats] = useState<FeeStats>({
     expected: 0,
@@ -105,8 +104,6 @@ export default function FeesScreen() {
   const [submittingPayment, setSubmittingPayment] = useState(false);
 
   async function fetchFeeData() {
-    if (!schoolId) return;
-
     try {
       // Fetch all students with their fee data
       const { data: students, error: studentsError } = await supabase
@@ -228,8 +225,6 @@ export default function FeesScreen() {
   };
 
   async function loadAllStudents() {
-    if (!schoolId) return;
-    
     try {
       const { data, error } = await supabase
         .from('students')
@@ -246,8 +241,6 @@ export default function FeesScreen() {
   }
 
   async function loadStudentFees(studentId: string) {
-    if (!schoolId) return;
-    
     setLoadingFees(true);
     try {
       const { data, error } = await supabase

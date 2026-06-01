@@ -29,8 +29,7 @@ interface AuthContextType {
     email: string,
     password: string,
     fullName: string,
-    role: string,
-    schoolId?: string
+    role: string
   ) => Promise<{ error: string | null }>;
   signInWithGoogle: () => Promise<{ error: string | null }>;
   signOut: () => Promise<void>;
@@ -135,7 +134,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
 
     if (redirectTarget === '/(parent)') {
-      if (currentSegment === 'parent') {
+      if (cleanSegment === 'parent') {
         return;
       }
       router.replace('/(parent)' as any);
@@ -143,7 +142,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
 
     if (redirectTarget === '/(accountant)') {
-      if (currentSegment === 'accountant') {
+      if (cleanSegment === 'accountant') {
         return;
       }
       router.replace('/(accountant)' as any);
@@ -208,16 +207,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     email: string,
     password: string,
     fullName: string,
-    role: string,
-    schoolId?: string
+    role: string
   ): Promise<{ error: string | null }> {
-    const resolvedSchoolId = schoolId ?? DEFAULT_SCHOOL_ID;
-
     const { data, error } = await supabase.auth.signUp({
       email,
       password,
       options: {
-        data: { full_name: fullName, role, school_id: resolvedSchoolId },
+        data: { full_name: fullName, role, school_id: DEFAULT_SCHOOL_ID },
       },
     });
     if (error) return { error: error.message };

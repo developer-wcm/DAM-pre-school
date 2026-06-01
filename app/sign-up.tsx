@@ -14,7 +14,7 @@ import {
     TouchableOpacity,
     View,
 } from 'react-native';
-import { DEFAULT_SCHOOL_ID, DEFAULT_SCHOOL_NAME } from '../constants/school';
+import { DEFAULT_SCHOOL_NAME } from '../constants/school';
 import { useAuth } from '../context/auth';
 
 function getPasswordStrength(password: string) {
@@ -28,10 +28,9 @@ function getPasswordStrength(password: string) {
 
 export default function SignUpScreen() {
   const router = useRouter();
-  const { role, schoolId, schoolName } = useLocalSearchParams<{ role: string; schoolId: string; schoolName: string }>();
+  const { role } = useLocalSearchParams<{ role?: string }>();
   const { signUpWithEmail, signInWithGoogle } = useAuth();
-  const resolvedSchoolId = schoolId ?? DEFAULT_SCHOOL_ID;
-  const resolvedSchoolName = schoolName ?? DEFAULT_SCHOOL_NAME;
+  const resolvedSchoolName = DEFAULT_SCHOOL_NAME;
 
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
@@ -59,7 +58,7 @@ export default function SignUpScreen() {
     }
     setLoading(true);
     const { error } = await signUpWithEmail(
-      email.trim(), password, fullName.trim(), role ?? 'parent', resolvedSchoolId
+      email.trim(), password, fullName.trim(), role ?? 'parent'
     );
     setLoading(false);
     if (error) { 

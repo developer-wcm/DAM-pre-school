@@ -1,4 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useAuth } from '../../context/auth';
 
@@ -79,6 +80,7 @@ const MENU_ITEMS = [
 ];
 
 export default function MoreScreen() {
+  const router = useRouter();
   const { profile, signOut } = useAuth();
 
   const initials = profile?.full_name
@@ -110,9 +112,16 @@ export default function MoreScreen() {
               key={item.id}
               style={styles.card}
               activeOpacity={0.82}
+              onPress={() => {
+                if (item.id === 'staff-attendance') {
+                  router.push('/(dashboard)/staff-attendance');
+                } else if (item.id === 'staff-management') {
+                  router.push('/(dashboard)/staff-management');
+                }
+              }}
             >
               {item.badge && <View style={styles.badge} />}
-              <View style={[styles.iconCircle, { backgroundColor: item.bg }]}>
+              <View style={[styles.iconCircle, { backgroundColor: item.bg }]}> 
                 <Ionicons name={item.icon} size={22} color={item.iconColor} />
               </View>
               <Text style={styles.cardLabel}>{item.label}</Text>

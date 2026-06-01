@@ -28,12 +28,12 @@ begin
   end if;
 end $$;
 
--- Step 2: Create the school with join code DEMO01
+-- Step 2: Create the school with join code DEM001
 insert into public.schools (id, name, join_code)
 values (
   'a1b2c3d4-0000-0000-0000-000000000001',
   'DMA PreSchool',
-  'DEMO01'
+  'DEM001'
 )
 on conflict (join_code) do update set name = 'DMA PreSchool';
 
@@ -44,7 +44,7 @@ declare
 begin
   if exists (
     select 1 from public.schools
-    where join_code = 'DEMO01' and teacher_join_code is null
+    where join_code = 'DEM001' and teacher_join_code is null
   ) then
     loop
       new_code := 'T' || upper(substring(replace(gen_random_uuid()::text, '-', ''), 1, 6));
@@ -52,7 +52,7 @@ begin
         select 1 from public.schools where teacher_join_code = new_code
       );
     end loop;
-    update public.schools set teacher_join_code = new_code where join_code = 'DEMO01';
+    update public.schools set teacher_join_code = new_code where join_code = 'DEM001';
     raise notice 'Generated teacher_join_code: %', new_code;
   end if;
 end;
@@ -60,11 +60,11 @@ $$;
 
 -- Step 3: Upsert admin profile
 insert into public.profiles (id, full_name, role, school_id, approved)
-select id, 'Demo Admin', 'admin', 'DEMO01', true
+select id, 'Demo Admin', 'admin', 'DEM001', true
 from auth.users
 where email = 'admin@dmapreschool.com'
 on conflict (id) do update
   set full_name = 'Demo Admin',
       role      = 'admin',
-      school_id = 'DEMO01',
+      school_id = 'DEM001',
       approved  = true;

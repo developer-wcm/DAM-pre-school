@@ -15,6 +15,7 @@ import {
     View
 } from 'react-native';
 import { useAuth } from '../../context/auth';
+import { DEFAULT_SCHOOL_ID, DEFAULT_SCHOOL_NAME } from '../../constants/school';
 import { presentWeightForStatus } from '../../lib/attendance';
 import { supabase } from '../../lib/supabase';
 
@@ -38,6 +39,29 @@ interface PendingRequest {
   created_at: string;
 }
 
+interface DashboardStudentRow {
+  id: string;
+  class: string | null;
+}
+
+interface DashboardAttendanceRow {
+  student_id: string;
+  status: string;
+}
+
+interface DashboardFeeRow {
+  amount: number | string;
+  paid: boolean | null;
+  due_date: string | null;
+}
+
+interface DashboardHolidayRow {
+  name: string;
+  date: string;
+  date_to: string | null;
+  days: number | null;
+}
+
 interface ActivityItem {
   id: string;
   icon: string;
@@ -51,6 +75,21 @@ const QUICK_ACTIONS = [
   { id: 'pending', icon: 'people-outline' as const, label: 'Pending\nRequests', color: '#E8E4F8', iconColor: '#7B6FE8' },
   { id: 'attendance', icon: 'checkmark-circle-outline' as const, label: 'Mark\nAttendance', color: '#D4F4E8', iconColor: '#2A9D6E' },
   { id: 'payment', icon: 'card-outline' as const, label: 'Record\nPayment', color: '#FFF0D4', iconColor: '#D4822A' },
+];
+
+const DEMO_HOLIDAYS: DashboardHolidayRow[] = [
+  { name: 'Ganesh Chaturthi', date: '2026-09-14', date_to: '2026-09-14', days: 1 },
+  { name: 'Gandhi Jayanthi', date: '2026-10-02', date_to: '2026-10-02', days: 1 },
+  { name: 'Term 1 Break', date: '2026-10-19', date_to: '2026-10-23', days: 5 },
+  { name: 'Annual Prayer Conference', date: '2026-10-30', date_to: '2026-10-30', days: 1 },
+  { name: 'Tentative Holiday', date: '2026-11-02', date_to: '2026-11-02', days: 1 },
+  { name: 'Diwali Holidays', date: '2026-11-09', date_to: '2026-11-10', days: 2 },
+  { name: 'Kanakadasa Jayanti', date: '2026-11-27', date_to: '2026-11-27', days: 1 },
+  { name: 'Term 2 Break / Christmas', date: '2026-12-21', date_to: '2026-12-31', days: 9 },
+  { name: 'New Year', date: '2027-01-01', date_to: '2027-01-01', days: 1 },
+  { name: 'Uttarayan (Makara Sankranti)', date: '2027-01-14', date_to: '2027-01-14', days: 1 },
+  { name: 'Republic Day', date: '2027-01-26', date_to: '2027-01-26', days: 1 },
+  { name: 'Summer Holidays', date: '2027-03-22', date_to: '2027-05-25', days: 65 },
 ];
 
 const ROLE_CONFIG: Record<string, { color: string; bg: string; icon: any; label: string }> = {
@@ -79,6 +118,20 @@ function timeAgo(dateStr: string) {
   const hrs = Math.floor(mins / 60);
   if (hrs < 24) return `${hrs}h ago`;
   return `${Math.floor(hrs / 24)}d ago`;
+}
+
+function getLocalDateKey(date = new Date()) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function getNextHoliday(holidays: DashboardHolidayRow[], todayKey: string) {
+  return holidays.find((holiday) => {
+    const endsOn = holiday.date_to ?? holiday.date;
+    return endsOn >= todayKey;
+  }) ?? null;
 }
 
 export default function AdminDashboardScreen() {
@@ -124,51 +177,90 @@ export default function AdminDashboardScreen() {
     }).start(() => setNotifVisible(false));
   }
 
-  const schoolId = profile?.school_id;
+  const schoolId = profile?.school_id ?? DEFAULT_SCHOOL_ID;
 
   async function fetchDashboard() {
-    if (!schoolId) return;
     try {
-      const [studentsRes, attendanceRes, feesRes, schoolRes, activityRes, holidayRes, pendingRes] = await Promise.all([
-        supabase.from('students').select('id, class').eq('school_id', schoolId),
-        supabase.from('attendance').select('student_id, status')
-          .eq('school_id', schoolId).eq('date', new Date().toISOString().split('T')[0]),
+      const todayKey = getLocalDateKey();
+      const [
+        studentsRpcRes,
+        attendanceRpcRes,
+        feesRes,
+        activityRes,
+        pendingRes,
+      ] = await Promise.all([
+        supabase.rpc('get_student_profiles'),
+        supabase.rpc('get_student_attendance_range', {
+          p_start_date: todayKey,
+          p_end_date: todayKey,
+        }),
         supabase.from('fees').select('amount, paid, due_date').eq('school_id', schoolId).eq('paid', false),
-        supabase.from('schools').select('name').eq('join_code', schoolId).maybeSingle(),
         supabase.from('activity_log').select('*').eq('school_id', schoolId)
           .order('created_at', { ascending: false }).limit(5),
-        supabase.from('holidays').select('name, date, date_to, days')
-          .eq('school_id', schoolId)
-          .gte('date', new Date().toISOString().split('T')[0])
-          .order('date', { ascending: true }).limit(1).maybeSingle(),
-        // Fetch unapproved users for this school via security definer function
         supabase.rpc('get_pending_profiles', { p_school_id: schoolId }),
       ]);
 
-      const students = studentsRes.data ?? [];
+      const studentsRes = studentsRpcRes.error
+        ? await supabase.from('students').select('id, class').eq('school_id', schoolId)
+        : studentsRpcRes;
+
+      const attendanceRes = attendanceRpcRes.error
+        ? await supabase.from('attendance').select('student_id, status')
+          .eq('school_id', schoolId).eq('date', todayKey)
+        : attendanceRpcRes;
+
+      const holidayRpcRes = await supabase.rpc('get_dashboard_next_holiday', {
+        p_today: todayKey,
+      });
+
+      const holidaysRes = holidayRpcRes.error
+        ? await supabase.from('holidays')
+          .select('name, date, date_to, days')
+          .eq('school_id', schoolId)
+          .order('date', { ascending: true })
+          .limit(25)
+        : holidayRpcRes;
+
+      if (studentsRpcRes.error) console.warn('[Dashboard] Student RPC unavailable:', studentsRpcRes.error.message);
+      if (attendanceRpcRes.error) console.warn('[Dashboard] Attendance RPC unavailable:', attendanceRpcRes.error.message);
+
+      if (studentsRes.error) throw studentsRes.error;
+      if (attendanceRes.error) throw attendanceRes.error;
+      if (feesRes.error) throw feesRes.error;
+      if (activityRes.error) throw activityRes.error;
+      if (holidaysRes.error) throw holidaysRes.error;
+
+      const students = (studentsRes.data ?? []) as DashboardStudentRow[];
       const classCounts: { [key: string]: number } = {};
       students.forEach((s) => { if (s.class) classCounts[s.class] = (classCounts[s.class] || 0) + 1; });
 
-      const todayAttendance = attendanceRes.data ?? [];
+      const todayAttendance = (attendanceRes.data ?? []) as DashboardAttendanceRow[];
       const presentToday = todayAttendance.reduce(
         (sum, record) => sum + presentWeightForStatus(record.status),
         0
       );
 
-      const pendingFees = feesRes.data ?? [];
+      const pendingFees = (feesRes.data ?? []) as DashboardFeeRow[];
       const pendingAmount = pendingFees.reduce((sum, f) => sum + Number(f.amount), 0);
-      const today = new Date().toISOString().split('T')[0];
-      const overdueCount = pendingFees.filter((f) => f.due_date && f.due_date < today).length;
+      const overdueCount = pendingFees.filter((f) => f.due_date && f.due_date < todayKey).length;
+
+      const holidays = (Array.isArray(holidaysRes.data)
+        ? holidaysRes.data
+        : holidaysRes.data ? [holidaysRes.data] : []) as DashboardHolidayRow[];
+      const nextHoliday = getNextHoliday(
+        holidays.length > 0 ? holidays : DEMO_HOLIDAYS,
+        todayKey
+      );
 
       setStats({
         totalStudents: students.length,
         classCounts: Object.entries(classCounts).map(([cls, count]) => ({ class: cls, count })),
         presentToday, pendingFeesAmount: pendingAmount, overdueCount,
-        schoolName: schoolRes.data?.name ?? 'Your School',
-        nextHolidayName: holidayRes.data?.name ?? null,
-        nextHolidayDate: holidayRes.data?.date ?? null,
-        nextHolidayDateTo: holidayRes.data?.date_to ?? null,
-        nextHolidayDays: holidayRes.data?.days ?? null,
+        schoolName: DEFAULT_SCHOOL_NAME,
+        nextHolidayName: nextHoliday?.name ?? null,
+        nextHolidayDate: nextHoliday?.date ?? null,
+        nextHolidayDateTo: nextHoliday?.date_to ?? null,
+        nextHolidayDays: nextHoliday?.days ?? null,
       });
       setActivity(activityRes.data ?? []);
       setPendingRequests(pendingRes.data ?? []);
@@ -185,8 +277,6 @@ export default function AdminDashboardScreen() {
 
   // Realtime subscription — fires when a new profile is inserted (new sign-up)
   useEffect(() => {
-    if (!schoolId) return;
-
     // Create a unique channel name to avoid conflicts
     const channelName = `pending-approvals-${schoolId}-${Date.now()}`;
     

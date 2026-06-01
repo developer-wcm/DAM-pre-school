@@ -96,6 +96,20 @@ export default function DashboardLayout() {
           tabBarStyle: { display: 'none' },
         }}
       />
+      <Tabs.Screen
+        name="staff-attendance"
+        options={{
+          href: null,
+          tabBarStyle: { display: 'none' },
+        }}
+      />
+      <Tabs.Screen
+        name="staff-management"
+        options={{
+          href: null,
+          tabBarStyle: { display: 'none' },
+        }}
+      />
 
     </Tabs>
   );

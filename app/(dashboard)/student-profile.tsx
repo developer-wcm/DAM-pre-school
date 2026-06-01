@@ -15,6 +15,7 @@ import {
 } from 'react-native';
 import EditStudentModal from '../../components/EditStudentModal';
 import { getProgressLevelDetails, getSkillsForClass, SKILL_LEVELS, type Skill, type SkillLevel } from '../../constants/progressSkills';
+import { DEFAULT_SCHOOL_ID } from '../../constants/school';
 import { AppColors, AppShadows } from '../../constants/theme';
 import { useAuth } from '../../context/auth';
 import {
@@ -189,6 +190,7 @@ export default function StudentProfileScreen() {
   const [feeStats, setFeeStats] = useState<FeeStats>({ totalAnnual: 0, paid: 0, outstanding: 0, percentage: 0 });
   const [feeLoading, setFeeLoading] = useState(false);
   const todayDayNumber = useMemo(() => new Date().getDate(), []);
+  const schoolId = DEFAULT_SCHOOL_ID;
   const isViewingCurrentMonth = useMemo(() => {
     const now = new Date();
     return (
@@ -226,11 +228,11 @@ export default function StudentProfileScreen() {
   }, [activeTab, loadProgressSkills, student?.class]);
 
   const loadAttendanceMonth = useCallback(async () => {
-    if (!student?.school_id || !studentId) return;
+    if (!studentId) return;
 
     setAttendanceLoading(true);
     const { rows, error } = await fetchStudentAttendanceMonth(
-      student.school_id,
+      schoolId,
       studentId,
       attendanceMonth
     );
@@ -261,31 +263,31 @@ export default function StudentProfileScreen() {
       noteDate: getMonthLabel(attendanceMonth),
       noteText: latestNote,
     });
-  }, [attendanceMonth, student?.school_id, studentId]);
+  }, [attendanceMonth, schoolId, studentId]);
 
   useEffect(() => {
-    if (activeTab === 'attendance' && student?.school_id) {
+    if (activeTab === 'attendance') {
       loadAttendanceMonth();
     }
-  }, [activeTab, loadAttendanceMonth, student?.school_id]);
+  }, [activeTab, loadAttendanceMonth]);
 
   useFocusEffect(
     useCallback(() => {
-      if (activeTab === 'attendance' && student?.school_id) {
+      if (activeTab === 'attendance') {
         loadAttendanceMonth();
       }
-    }, [activeTab, loadAttendanceMonth, student?.school_id])
+    }, [activeTab, loadAttendanceMonth])
   );
 
   const loadFeeData = useCallback(async () => {
-    if (!studentId || !student?.school_id) return;
+    if (!studentId) return;
     setFeeLoading(true);
     try {
       const { data, error } = await supabase
         .from('fees')
         .select('*')
         .eq('student_id', studentId)
-        .eq('school_id', student.school_id)
+        .eq('school_id', schoolId)
         .neq('installment_number', 0) // Exclude parent records
         .order('due_date', { ascending: true });
 
@@ -315,13 +317,13 @@ export default function StudentProfileScreen() {
     } finally {
       setFeeLoading(false);
     }
-  }, [studentId, student?.school_id]);
+  }, [schoolId, studentId]);
 
   useEffect(() => {
-    if (activeTab === 'fees' && student?.school_id) {
+    if (activeTab === 'fees') {
       loadFeeData();
     }
-  }, [activeTab, loadFeeData, student?.school_id]);
+  }, [activeTab, loadFeeData]);
 
   async function fetchStudentProfile() {
     try {
@@ -358,7 +360,7 @@ export default function StudentProfileScreen() {
     nextSummary: AttendanceSummary,
     nextDays: AttendanceDay[]
   ): Promise<{ ok: boolean; message?: string }> {
-    if (!student?.school_id || !profile?.id) {
+    if (!student || !profile?.id) {
       return { ok: false, message: 'Missing school or user session.' };
     }
 
@@ -372,7 +374,7 @@ export default function StudentProfileScreen() {
     };
 
     const { error } = await saveStudentAttendanceMonth({
-      schoolId: student.school_id,
+      schoolId,
       studentId: student.id,
       month: attendanceMonth,
       days: nextDays,
