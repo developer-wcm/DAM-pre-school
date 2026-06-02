@@ -18,6 +18,7 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import AttendanceDatePickerModal from '../../components/AttendanceDatePickerModal';
 import { COLORS } from '../../constants/admissionTheme';
+import { DEFAULT_SCHOOL_ID } from '../../constants/school';
 import { useAuth } from '../../context/auth';
 import {
   addMonths as shiftMonths,
@@ -119,7 +120,7 @@ export default function AttendanceScreen() {
   const { profile } = useAuth();
   const insets = useSafeAreaInsets();
   const tabBarHeight = useBottomTabBarHeight();
-  const schoolId = profile?.school_id;
+  const schoolId = DEFAULT_SCHOOL_ID;
   const todayKey = useMemo(() => toDateKey(new Date()), []);
   const [viewMode, setViewMode] = useState<'daily' | 'monthly'>('daily');
   const [focusDate, setFocusDate] = useState(() => new Date());
@@ -162,32 +163,42 @@ export default function AttendanceScreen() {
   );
 
   const fetchAttendanceData = useCallback(async () => {
-    if (!schoolId) {
-      setStudents([]);
-      setLoading(false);
-      setRefreshing(false);
-      return;
-    }
-
     try {
       const monthStart = toDateKey(selectedMonth);
       const monthEnd = toDateKey(getMonthEnd(selectedMonth));
 
-      const [studentsRes, attendanceRes] = await Promise.all([
-        supabase
+      const [studentsRpcRes, attendanceRpcRes] = await Promise.all([
+        supabase.rpc('get_student_profiles'),
+        supabase.rpc('get_student_attendance_range', {
+          p_start_date: monthStart,
+          p_end_date: monthEnd,
+        }),
+      ]);
+
+      const studentsRes = studentsRpcRes.error
+        ? await supabase
           .from('students')
           .select('id, full_name, roll_number, class')
-          .eq('school_id', schoolId)
           .eq('status', 'active')
           .order('class', { ascending: true })
-          .order('roll_number', { ascending: true }),
-        supabase
+          .order('roll_number', { ascending: true })
+        : studentsRpcRes;
+
+      const attendanceRes = attendanceRpcRes.error
+        ? await supabase
           .from('attendance')
           .select('student_id, date, status')
-          .eq('school_id', schoolId)
           .gte('date', monthStart)
-          .lte('date', monthEnd),
-      ]);
+          .lte('date', monthEnd)
+        : attendanceRpcRes;
+
+      if (studentsRpcRes.error) {
+        console.warn('[Attendance] Student RPC unavailable, falling back to students query:', studentsRpcRes.error.message);
+      }
+
+      if (attendanceRpcRes.error) {
+        console.warn('[Attendance] Attendance RPC unavailable, falling back to attendance query:', attendanceRpcRes.error.message);
+      }
 
       if (studentsRes.error) throw studentsRes.error;
       if (attendanceRes.error) throw attendanceRes.error;
@@ -345,7 +356,7 @@ export default function AttendanceScreen() {
   };
 
   const saveAttendance = async () => {
-    if (!schoolId || !profile?.id || saving || !hasPendingChanges) return;
+    if (!profile?.id || saving || !hasPendingChanges) return;
 
     const changedStudents = filteredStudents.filter(
       (student) => (savedSnapshot[student.id] ?? null) !== student.attendance
@@ -379,7 +390,6 @@ export default function AttendanceScreen() {
         const { error: deleteError } = await supabase
           .from('attendance')
           .delete()
-          .eq('school_id', schoolId)
           .eq('date', selectedDate)
           .in('student_id', toClearIds);
         if (deleteError) throw deleteError;

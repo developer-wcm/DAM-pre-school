@@ -13,7 +13,6 @@ import {
 } from 'react-native';
 
 import { COLORS } from '../constants/admissionTheme';
-import { DEFAULT_SCHOOL_ID, DEFAULT_SCHOOL_NAME } from '../constants/school';
 import { IMAGES } from '../constants/images';
 
 type Role = 'teacher' | 'parent' | null;
@@ -191,8 +190,6 @@ export default function RoleSelectionScreen() {
                   pathname: '/sign-up',
                   params: {
                     role: selectedRole,
-                    schoolId: DEFAULT_SCHOOL_ID,
-                    schoolName: DEFAULT_SCHOOL_NAME,
                   },
                 });
               }

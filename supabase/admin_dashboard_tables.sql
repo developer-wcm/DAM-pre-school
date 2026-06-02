@@ -203,22 +203,22 @@ $$;
 -- Insert demo students
 INSERT INTO students (school_id, full_name, class, roll_number, date_of_birth, gender, admission_date, status)
 VALUES
-  ('DEMO01', 'Aarav Sharma', 'PG', 'PG001', '2021-05-15', 'male', '2024-04-01', 'active'),
-  ('DEMO01', 'Ananya Patel', 'PG', 'PG002', '2021-06-20', 'female', '2024-04-01', 'active'),
-  ('DEMO01', 'Vivaan Kumar', 'PG', 'PG003', '2021-07-10', 'male', '2024-04-01', 'active'),
-  ('DEMO01', 'Diya Singh', 'PKG', 'PKG001', '2020-08-12', 'female', '2023-04-01', 'active'),
-  ('DEMO01', 'Arjun Reddy', 'PKG', 'PKG002', '2020-09-25', 'male', '2023-04-01', 'active'),
-  ('DEMO01', 'Ishita Verma', 'PKG', 'PKG003', '2020-10-30', 'female', '2023-04-01', 'active'),
-  ('DEMO01', 'Reyansh Gupta', 'JKG', 'JKG001', '2019-11-05', 'male', '2022-04-01', 'active'),
-  ('DEMO01', 'Saanvi Joshi', 'JKG', 'JKG002', '2019-12-18', 'female', '2022-04-01', 'active'),
-  ('DEMO01', 'Aditya Mehta', 'SKG', 'SKG001', '2018-01-22', 'male', '2021-04-01', 'active'),
-  ('DEMO01', 'Kiara Nair', 'SKG', 'SKG002', '2018-02-14', 'female', '2021-04-01', 'active')
+  ('DEM001', 'Aarav Sharma', 'PG', 'PG001', '2021-05-15', 'male', '2024-04-01', 'active'),
+  ('DEM001', 'Ananya Patel', 'PG', 'PG002', '2021-06-20', 'female', '2024-04-01', 'active'),
+  ('DEM001', 'Vivaan Kumar', 'PG', 'PG003', '2021-07-10', 'male', '2024-04-01', 'active'),
+  ('DEM001', 'Diya Singh', 'PKG', 'PKG001', '2020-08-12', 'female', '2023-04-01', 'active'),
+  ('DEM001', 'Arjun Reddy', 'PKG', 'PKG002', '2020-09-25', 'male', '2023-04-01', 'active'),
+  ('DEM001', 'Ishita Verma', 'PKG', 'PKG003', '2020-10-30', 'female', '2023-04-01', 'active'),
+  ('DEM001', 'Reyansh Gupta', 'JKG', 'JKG001', '2019-11-05', 'male', '2022-04-01', 'active'),
+  ('DEM001', 'Saanvi Joshi', 'JKG', 'JKG002', '2019-12-18', 'female', '2022-04-01', 'active'),
+  ('DEM001', 'Aditya Mehta', 'SKG', 'SKG001', '2018-01-22', 'male', '2021-04-01', 'active'),
+  ('DEM001', 'Kiara Nair', 'SKG', 'SKG002', '2018-02-14', 'female', '2021-04-01', 'active')
 ON CONFLICT DO NOTHING;
 
 -- Insert today's attendance (80% present)
 INSERT INTO attendance (school_id, student_id, date, status)
 SELECT 
-  'DEMO01',
+  'DEM001',
   id,
   CURRENT_DATE,
   CASE 
@@ -227,13 +227,13 @@ SELECT
     ELSE 'late'
   END
 FROM students
-WHERE school_id = 'DEMO01'
+WHERE school_id = 'DEM001'
 ON CONFLICT (student_id, date) DO NOTHING;
 
 -- Insert pending fees
 INSERT INTO fees (school_id, student_id, fee_type, amount, due_date, paid, paid_amount)
 SELECT 
-  'DEMO01',
+  'DEM001',
   id,
   'tuition',
   5000.00,
@@ -241,13 +241,13 @@ SELECT
   FALSE,
   0
 FROM students
-WHERE school_id = 'DEMO01' AND class IN ('PG', 'PKG')
+WHERE school_id = 'DEM001' AND class IN ('PG', 'PKG')
 ON CONFLICT DO NOTHING;
 
 -- Insert some overdue fees
 INSERT INTO fees (school_id, student_id, fee_type, amount, due_date, paid, paid_amount)
 SELECT 
-  'DEMO01',
+  'DEM001',
   id,
   'activity',
   1500.00,
@@ -255,28 +255,28 @@ SELECT
   FALSE,
   0
 FROM students
-WHERE school_id = 'DEMO01' AND class IN ('JKG', 'SKG')
+WHERE school_id = 'DEM001' AND class IN ('JKG', 'SKG')
 LIMIT 3
 ON CONFLICT DO NOTHING;
 
 -- Insert holidays
 INSERT INTO holidays (school_id, name, date, date_to, days, type, description)
 VALUES
-  ('DEMO01', 'Republic Day', '2026-01-26', '2026-01-26', 1, 'public', 'National holiday celebrating the adoption of the Constitution'),
-  ('DEMO01', 'Holi', '2026-03-14', '2026-03-15', 2, 'public', 'Festival of colors'),
-  ('DEMO01', 'Summer Break', '2026-05-15', '2026-06-30', 47, 'school', 'Annual summer vacation'),
-  ('DEMO01', 'Independence Day', '2026-08-15', '2026-08-15', 1, 'public', 'National holiday celebrating independence'),
-  ('DEMO01', 'Diwali', '2026-11-01', '2026-11-05', 5, 'public', 'Festival of lights')
+  ('DEM001', 'Republic Day', '2026-01-26', '2026-01-26', 1, 'public', 'National holiday celebrating the adoption of the Constitution'),
+  ('DEM001', 'Holi', '2026-03-14', '2026-03-15', 2, 'public', 'Festival of colors'),
+  ('DEM001', 'Summer Break', '2026-05-15', '2026-06-30', 47, 'school', 'Annual summer vacation'),
+  ('DEM001', 'Independence Day', '2026-08-15', '2026-08-15', 1, 'public', 'National holiday celebrating independence'),
+  ('DEM001', 'Diwali', '2026-11-01', '2026-11-05', 5, 'public', 'Festival of lights')
 ON CONFLICT DO NOTHING;
 
 -- Insert activity log entries
 INSERT INTO activity_log (school_id, icon, title, subtitle, color, dot_color)
 VALUES
-  ('DEMO01', '👋', 'New Student Enrolled', 'Aarav Sharma joined Class PG', '#E8F4FB', '#3AAF72'),
-  ('DEMO01', '💰', 'Fee Payment Received', 'Ananya Patel paid ₹5,000 tuition fee', '#FFF0D4', '#D4822A'),
-  ('DEMO01', '✅', 'Attendance Marked', 'Class PKG attendance completed for today', '#D4F4E8', '#2A9D6E'),
-  ('DEMO01', '📢', 'Announcement Posted', 'Sports Day scheduled for next Friday', '#E8E4F8', '#7B6FE8'),
-  ('DEMO01', '👨‍🏫', 'Teacher Approved', 'Priya Sharma joined as teacher', '#D4F4E8', '#2A9D6E')
+  ('DEM001', '👋', 'New Student Enrolled', 'Aarav Sharma joined Class PG', '#E8F4FB', '#3AAF72'),
+  ('DEM001', '💰', 'Fee Payment Received', 'Ananya Patel paid ₹5,000 tuition fee', '#FFF0D4', '#D4822A'),
+  ('DEM001', '✅', 'Attendance Marked', 'Class PKG attendance completed for today', '#D4F4E8', '#2A9D6E'),
+  ('DEM001', '📢', 'Announcement Posted', 'Sports Day scheduled for next Friday', '#E8E4F8', '#7B6FE8'),
+  ('DEM001', '👨‍🏫', 'Teacher Approved', 'Priya Sharma joined as teacher', '#D4F4E8', '#2A9D6E')
 ON CONFLICT DO NOTHING;
 
 -- ============================================================================

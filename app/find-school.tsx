@@ -3,7 +3,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect } from 'react';
 import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { DEFAULT_SCHOOL_ID, DEFAULT_SCHOOL_NAME } from '../constants/school';
+import { DEFAULT_SCHOOL_NAME } from '../constants/school';
 
 export default function FindSchoolScreen() {
   const router = useRouter();
@@ -14,8 +14,6 @@ export default function FindSchoolScreen() {
       pathname: '/sign-up',
       params: {
         role: role ?? 'parent',
-        schoolId: DEFAULT_SCHOOL_ID,
-        schoolName: DEFAULT_SCHOOL_NAME,
       },
     });
   }, [role, router]);
@@ -28,7 +26,7 @@ export default function FindSchoolScreen() {
         </View>
         <Text style={styles.title}>Loading school access...</Text>
         <Text style={styles.subtitle}>
-          DMA PreSchool uses one school profile, so we are taking you directly to sign up.
+          {DEFAULT_SCHOOL_NAME} uses one school profile, so we are taking you directly to sign up.
         </Text>
         <ActivityIndicator color="#7B6FE8" />
         <TouchableOpacity style={styles.backBtn} onPress={() => router.back()} activeOpacity={0.8}>

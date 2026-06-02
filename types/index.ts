@@ -35,8 +35,7 @@ export interface AuthContextType {
     email: string,
     password: string,
     fullName: string,
-    role: string,
-    schoolId?: string
+    role: string
   ) => Promise<{ error: string | null }>;
   signInWithGoogle: () => Promise<{ error: string | null }>;
   signOut: () => Promise<void>;
@@ -276,7 +275,6 @@ export interface SignUpFormData {
   password: string;
   confirmPassword: string;
   role: UserRole;
-  schoolId?: string;
 }
 
 export interface AdmissionStep1Data {
@@ -390,7 +388,7 @@ export interface AppError {
 export type RootStackParamList = {
   index: undefined;
   login: undefined;
-  'sign-up': { role?: UserRole; schoolId?: string };
+  'sign-up': { role?: UserRole };
   'role-selection': undefined;
   'find-school': { role?: UserRole };
   'enter-code': undefined;

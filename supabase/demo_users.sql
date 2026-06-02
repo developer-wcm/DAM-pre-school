@@ -31,7 +31,7 @@ INSERT INTO public.schools (id, name, join_code, teacher_join_code)
 VALUES (
   'a1b2c3d4-0000-0000-0000-000000000001',
   'DAM PreSchool',
-  'DEMO01',
+  'DEM001',
   'TEACH01'
 )
 ON CONFLICT (join_code) DO UPDATE 
@@ -70,9 +70,9 @@ BEGIN
 
   -- Create profile
   INSERT INTO public.profiles (id, full_name, role, school_id, approved)
-  VALUES (admin_user_id, 'Demo Admin', 'admin', 'DEMO01', true)
+  VALUES (admin_user_id, 'Demo Admin', 'admin', 'DEM001', true)
   ON CONFLICT (id) DO UPDATE
-  SET full_name = 'Demo Admin', role = 'admin', school_id = 'DEMO01', approved = true;
+  SET full_name = 'Demo Admin', role = 'admin', school_id = 'DEM001', approved = true;
 END $$;
 
 -- ============================================================
@@ -108,9 +108,9 @@ BEGIN
 
   -- Create profile
   INSERT INTO public.profiles (id, full_name, role, school_id, approved)
-  VALUES (principal_user_id, 'Demo Principal', 'principal', 'DEMO01', true)
+  VALUES (principal_user_id, 'Demo Principal', 'principal', 'DEM001', true)
   ON CONFLICT (id) DO UPDATE
-  SET full_name = 'Demo Principal', role = 'principal', school_id = 'DEMO01', approved = true;
+  SET full_name = 'Demo Principal', role = 'principal', school_id = 'DEM001', approved = true;
 END $$;
 
 -- ============================================================
@@ -156,7 +156,7 @@ BEGIN
     now() + interval '1 year'
   )
   ON CONFLICT (id) DO UPDATE
-  SET full_name = 'Demo Parent', role = 'parent', school_id = 'DEMO01', approved = true,
+  SET full_name = 'Demo Parent', role = 'parent', school_id = 'DEM001', approved = true,
       verification_code = '123456', code_expires_at = now() + interval '1 year';
 END $$;
 

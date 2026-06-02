@@ -12,8 +12,8 @@ DECLARE
 BEGIN
   user_role := COALESCE(NEW.raw_user_meta_data->>'role', 'parent');
   
-  -- Set school_id, default to DEMO01 if not provided
-  school_id := COALESCE(NEW.raw_user_meta_data->>'school_id', 'DEMO01');
+  -- Set school_id, default to DEM001 if not provided
+  school_id := COALESCE(NEW.raw_user_meta_data->>'school_id', 'DEM001');
   
   -- Set verification code based on role
   IF user_role = 'teacher' THEN

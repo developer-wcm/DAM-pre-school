@@ -36,8 +36,8 @@ declare
   school_id text;
   verification_code text;
 begin
-  -- Set school_id, default to DEMO01 if not provided
-  school_id := coalesce(new.raw_user_meta_data->>'school_id', 'DEMO01');
+  -- Set school_id, default to DEM001 if not provided
+  school_id := coalesce(new.raw_user_meta_data->>'school_id', 'DEM001');
   
   -- Set verification code (Google sign-ups default to parent role)
   verification_code := '123456';
