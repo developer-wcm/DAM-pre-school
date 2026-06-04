@@ -76,12 +76,7 @@ export default function StaffAttendanceScreen() {
 
     try {
       const [staffRes, attendanceRes] = await Promise.all([
-        supabase
-          .from('profiles')
-          .select('id, full_name, role')
-          .eq('school_id', DEFAULT_SCHOOL_ID)
-          .order('role', { ascending: true })
-          .order('full_name', { ascending: true }),
+        supabase.rpc('get_staff_profiles'),
         supabase
           .from('attendance')
           .select('student_id, status')
@@ -103,7 +98,6 @@ export default function StaffAttendanceScreen() {
       );
 
       const nextStaff = (staffRes.data ?? [])
-        .filter((member: { role: string }) => member.role !== 'parent')
         .map((member: { id: string; full_name: string | null; role: string }) => ({
           id: member.id,
           full_name: member.full_name,
