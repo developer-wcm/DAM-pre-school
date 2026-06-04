@@ -1,7 +1,10 @@
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
+import { supabase } from '../../../lib/supabase';
+import { DEFAULT_SCHOOL_ID } from '../../../constants/school';
 import {
+    ActivityIndicator,
     Alert,
     KeyboardAvoidingView,
     Platform,
@@ -109,28 +112,158 @@ function DocumentItem({ name, status }: { name: string; status: 'uploaded' | 'pe
 }
 
 // ─── Main screen ─────────────────────────────────────────────────────────────
+// Map admission class labels → DB class codes
+const CLASS_CODE: Record<string, string> = {
+  'Nursery':    'PG',
+  'Pre-KG':     'PKG',
+  'Junior KG':  'JKG',
+  'Senior KG':  'SKG',
+  'Grade 1':    'PG',
+  'Grade 2':    'PG',
+};
+
+// Human-readable labels for document types (mirrors step-4 doc definitions)
+const DOC_LABELS: Record<string, string> = {
+  birth_cert:      'Birth Certificate',
+  aadhar_child:    'Aadhaar Card (Student)',
+  student_photo:   'PP-Size Photograph (Student)',
+  medical_cert:    'Medical Fitness Certificate',
+  school_tc:       'Transfer Certificate',
+  father_aadhar:   "Aadhaar Card (Father)",
+  father_pan:      'PAN Card (Father)',
+  father_photo:    'Passport Size Photo (Father)',
+  mother_aadhar:   'Aadhaar Card (Mother)',
+  mother_pan:      'PAN Card (Mother)',
+  mother_photo:    'Passport Size Photo (Mother)',
+  family_photo:    'Family Photograph',
+  guardian_aadhar: 'Aadhaar Card (Guardian)',
+  guardian_pan:    'PAN Card (Guardian)',
+  guardian_photo:  'Passport Size Photo (Guardian)',
+  vaccination:     'Vaccination Certificate',
+  caste_cert:      'Caste Certificate',
+  income_cert:     'Income Certificate',
+};
+
 export default function AdmissionStep5() {
   const router = useRouter();
   const { admissionData, resetAdmissionData } = useAdmission();
   const [agreed, setAgreed] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   const insets = useSafeAreaInsets();
 
-  const handleSubmit = () => {
-    console.log('Submit button pressed, agreed:', agreed);
+  const handleSubmit = async () => {
     if (!agreed) {
       Alert.alert('Confirmation Required', 'Please confirm that all information is accurate before submitting.');
       return;
     }
-    
-    console.log('Submitting application and returning to students list...');
-    
+
+    setSubmitting(true);
     try {
+      // ── 1. Build student record ──────────────────────────────────────────────
+      const fullName = [admissionData.firstName, admissionData.middleName, admissionData.lastName]
+        .filter(Boolean).join(' ').trim();
+
+      // Parse DOB from DD/MM/YYYY → YYYY-MM-DD
+      let dobFormatted: string | null = null;
+      if (admissionData.dob && admissionData.dob.length === 10) {
+        const [dd, mm, yyyy] = admissionData.dob.split('/');
+        if (dd && mm && yyyy) dobFormatted = `${yyyy}-${mm}-${dd}`;
+      }
+
+      const classCode = CLASS_CODE[admissionData.selectedClass] ?? 'PG';
+
+      // Parse admissionDate DD/MM/YYYY or MM/DD/YYYY → YYYY-MM-DD
+      let admissionDateFormatted: string | null = null;
+      if (admissionData.admissionDate) {
+        const parts = admissionData.admissionDate.split('/');
+        if (parts.length === 3) {
+          admissionDateFormatted = `${parts[2]}-${parts[0].padStart(2,'0')}-${parts[1].padStart(2,'0')}`;
+        }
+      }
+
+      const { data: studentData, error: studentError } = await supabase
+        .from('students')
+        .insert({
+          full_name: fullName || 'Unknown',
+          class: classCode,
+          gender: admissionData.gender?.toLowerCase() ?? null,
+          date_of_birth: dobFormatted,
+          admission_date: admissionDateFormatted,
+          school_id: DEFAULT_SCHOOL_ID,
+          status: 'active',
+          mother_tongue: admissionData.motherTongue || null,
+          nationality: admissionData.nationality || null,
+          aadhaar_last4: admissionData.aadhaar || null,
+          address: admissionData.address || null,
+          father_name: admissionData.father.fullName || null,
+          father_phone: admissionData.father.phone || null,
+          father_email: admissionData.father.email || null,
+          father_occupation: admissionData.father.occupation || null,
+          father_work_location: admissionData.father.workLocation || null,
+          mother_name: admissionData.mother.fullName || null,
+          mother_phone: admissionData.mother.phone || null,
+          mother_email: admissionData.mother.email || null,
+          mother_occupation: admissionData.mother.occupation || null,
+          mother_work_location: admissionData.mother.workLocation || null,
+          guardian_name: admissionData.guardian.fullName || null,
+          guardian_phone: admissionData.guardian.phone || null,
+        })
+        .select('id')
+        .single();
+
+      if (studentError) throw studentError;
+      const studentId = studentData.id;
+
+      // ── 2. Upload documents to Supabase Storage ──────────────────────────────
+      const fileEntries = Object.entries(admissionData.files);
+      for (const [docType, file] of fileEntries) {
+        try {
+          // Fetch the local file as a blob
+          const response = await fetch(file.uri);
+          const blob = await response.blob();
+          const ext = file.name.split('.').pop() ?? 'jpg';
+          const storagePath = `${DEFAULT_SCHOOL_ID}/${studentId}/${docType}.${ext}`;
+
+          const { error: uploadError } = await supabase.storage
+            .from('student-documents')
+            .upload(storagePath, blob, { upsert: true, contentType: blob.type || 'application/octet-stream' });
+
+          if (uploadError) {
+            console.warn('Upload failed for', docType, uploadError.message);
+            continue;
+          }
+
+          // Get signed URL (valid 10 years)
+          const { data: urlData } = supabase.storage
+            .from('student-documents')
+            .getPublicUrl(storagePath);
+
+          const fileUrl = urlData?.publicUrl ?? '';
+
+          // Save metadata
+          await supabase.from('student_documents').insert({
+            student_id: studentId,
+            school_id: DEFAULT_SCHOOL_ID,
+            doc_type: docType,
+            doc_label: DOC_LABELS[docType] ?? docType,
+            file_name: file.name,
+            file_url: fileUrl,
+          });
+        } catch (docErr) {
+          console.warn('Error processing doc', docType, docErr);
+        }
+      }
+
+      // ── 3. Done ──────────────────────────────────────────────────────────────
       resetAdmissionData();
-      router.replace('/(dashboard)/students');
-      console.log('Navigation to students list successful');
-    } catch (error) {
-      console.error('Navigation error:', error);
-      Alert.alert('Navigation Error', 'Could not navigate to students screen');
+      Alert.alert('Admission Successful', `${fullName} has been admitted successfully!`, [
+        { text: 'OK', onPress: () => router.replace('/(dashboard)/students') },
+      ]);
+    } catch (error: any) {
+      console.error('Submission error:', error);
+      Alert.alert('Submission Failed', error.message || 'Could not complete admission. Please try again.');
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -321,21 +454,27 @@ export default function AdmissionStep5() {
             <Text style={styles.backBtnText}>Back</Text>
           </TouchableOpacity>
           <TouchableOpacity
-            style={[styles.submitBtnWrapper, !agreed && styles.submitBtnDisabled]}
+            style={[styles.submitBtnWrapper, (!agreed || submitting) && styles.submitBtnDisabled]}
             activeOpacity={0.85}
             onPress={handleSubmit}
-            disabled={!agreed}
+            disabled={!agreed || submitting}
           >
             <LinearGradient
-              colors={agreed ? [COLORS.primary, COLORS.primaryLight] : [COLORS.buttonDisabled, COLORS.buttonDisabled]}
+              colors={(agreed && !submitting) ? [COLORS.primary, COLORS.primaryLight] : [COLORS.buttonDisabled, COLORS.buttonDisabled]}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 0 }}
               style={styles.submitBtn}
             >
-              <View style={styles.submitIconCircle}>
-                <Text style={styles.submitIcon}>✓</Text>
-              </View>
-              <Text style={styles.submitBtnText}>Submit Application</Text>
+              {submitting ? (
+                <ActivityIndicator color="#fff" size="small" />
+              ) : (
+                <View style={styles.submitIconCircle}>
+                  <Text style={styles.submitIcon}>✓</Text>
+                </View>
+              )}
+              <Text style={styles.submitBtnText}>
+                {submitting ? 'Submitting...' : 'Submit Application'}
+              </Text>
             </LinearGradient>
           </TouchableOpacity>
 

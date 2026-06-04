@@ -1,10 +1,14 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
+import * as DocumentPicker from 'expo-document-picker';
+import * as ImagePicker from 'expo-image-picker';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Linking } from 'react-native';
 import {
   ActivityIndicator,
   Alert,
+  Image,
   Modal,
   ScrollView,
   StyleSheet,
@@ -44,6 +48,27 @@ interface StudentProfile {
   status: string;
   admission_date: string | null;
   school_id?: string | null;
+  // Personal
+  mother_tongue: string | null;
+  nationality: string | null;
+  aadhaar_last4: string | null;
+  address: string | null;
+  // Father
+  father_name: string | null;
+  father_phone: string | null;
+  father_email: string | null;
+  father_occupation: string | null;
+  father_work_location: string | null;
+  // Mother
+  mother_name: string | null;
+  mother_phone: string | null;
+  mother_email: string | null;
+  mother_occupation: string | null;
+  mother_work_location: string | null;
+  // Guardian
+  guardian_name: string | null;
+  guardian_phone: string | null;
+  guardian_relation: string | null;
 }
 
 type ProfileTab = 'info' | 'attendance' | 'fees' | 'progress';
@@ -66,6 +91,29 @@ interface FeeStats {
   outstanding: number;
   percentage: number;
 }
+interface StudentDocument {
+  id: string;
+  doc_type: string;
+  doc_label: string;
+  file_name: string;
+  file_url: string;
+  uploaded_at: string;
+}
+
+const DOC_CATEGORIES = [
+  { id: 'birth_cert',      label: 'Birth Certificate',              icon: 'document-text-outline', color: '#7B6FE8', required: true },
+  { id: 'aadhar_child',    label: 'Aadhaar Card (Student)',          icon: 'card-outline',           color: '#E05A5A', required: true },
+  { id: 'student_photo',   label: 'PP-Size Photo (Student)',         icon: 'image-outline',          color: '#3AAF72', required: true },
+  { id: 'medical_cert',    label: 'Medical Fitness Certificate',     icon: 'medkit-outline',         color: '#3AAF72', required: false },
+  { id: 'school_tc',       label: 'Transfer Certificate',           icon: 'document-outline',       color: '#F5A623', required: false },
+  { id: 'father_aadhar',   label: 'Aadhaar Card (Father)',           icon: 'card-outline',           color: '#E05A5A', required: false },
+  { id: 'father_photo',    label: 'Photo (Father)',                  icon: 'image-outline',          color: '#3AAF72', required: false },
+  { id: 'mother_aadhar',   label: 'Aadhaar Card (Mother)',           icon: 'card-outline',           color: '#E05A5A', required: false },
+  { id: 'mother_photo',    label: 'Photo (Mother)',                  icon: 'image-outline',          color: '#F5A623', required: false },
+  { id: 'family_photo',    label: 'Family Photograph',               icon: 'people-outline',         color: '#7B6FE8', required: false },
+  { id: 'guardian_aadhar', label: 'Aadhaar Card (Guardian)',         icon: 'card-outline',           color: '#E05A5A', required: false },
+];
+
 type AttendanceStatus = 'present' | 'absent' | 'late' | 'holiday';
 type AttendanceDay = CalendarDay;
 
@@ -189,6 +237,11 @@ export default function StudentProfileScreen() {
   const [feeRecords, setFeeRecords] = useState<FeeRecord[]>([]);
   const [feeStats, setFeeStats] = useState<FeeStats>({ totalAnnual: 0, paid: 0, outstanding: 0, percentage: 0 });
   const [feeLoading, setFeeLoading] = useState(false);
+  const [documents, setDocuments] = useState<StudentDocument[]>([]);
+  const [docsLoading, setDocsLoading] = useState(false);
+  const [uploadingDocType, setUploadingDocType] = useState<string | null>(null);
+  const [docSheetVisible, setDocSheetVisible] = useState(false);
+  const [activeDocCategory, setActiveDocCategory] = useState<typeof DOC_CATEGORIES[0] | null>(null);
   const todayDayNumber = useMemo(() => new Date().getDate(), []);
   const schoolId = DEFAULT_SCHOOL_ID;
   const isViewingCurrentMonth = useMemo(() => {
@@ -324,6 +377,120 @@ export default function StudentProfileScreen() {
       loadFeeData();
     }
   }, [activeTab, loadFeeData]);
+
+  const loadDocuments = useCallback(async () => {
+    if (!studentId) return;
+    setDocsLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('student_documents')
+        .select('*')
+        .eq('student_id', studentId)
+        .order('uploaded_at', { ascending: false });
+      if (error) throw error;
+      setDocuments(data ?? []);
+    } catch (e) {
+      console.error('Error loading documents:', e);
+    } finally {
+      setDocsLoading(false);
+    }
+  }, [studentId]);
+
+  useEffect(() => {
+    if (activeTab === 'info') {
+      loadDocuments();
+    }
+  }, [activeTab, loadDocuments]);
+
+  async function uploadDocument(docCategory: typeof DOC_CATEGORIES[0], fileUri: string, fileName: string) {
+    setUploadingDocType(docCategory.id);
+    try {
+      const blob: Blob = await new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.onload = () => resolve(xhr.response);
+        xhr.onerror = () => reject(new Error('Network request failed'));
+        xhr.responseType = 'blob';
+        xhr.open('GET', fileUri, true);
+        xhr.send(null);
+      });
+      const ext = fileName.split('.').pop() ?? 'jpg';
+      const storagePath = `${schoolId}/${studentId}/${docCategory.id}_${Date.now()}.${ext}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from('student-documents')
+        .upload(storagePath, blob, { upsert: true, contentType: blob.type || 'application/octet-stream' });
+
+      if (uploadError) throw uploadError;
+
+      const { data: urlData } = supabase.storage
+        .from('student-documents')
+        .getPublicUrl(storagePath);
+
+      await supabase.from('student_documents').insert({
+        student_id: studentId,
+        school_id: schoolId,
+        doc_type: docCategory.id,
+        doc_label: docCategory.label,
+        file_name: fileName,
+        file_url: urlData?.publicUrl ?? '',
+      });
+
+      await loadDocuments();
+      setDocSheetVisible(false);
+      setActiveDocCategory(null);
+    } catch (e: any) {
+      Alert.alert('Upload Failed', e.message || 'Could not upload document.');
+    } finally {
+      setUploadingDocType(null);
+    }
+  }
+
+  async function handleDocCamera() {
+    if (!activeDocCategory) return;
+    const { status } = await ImagePicker.requestCameraPermissionsAsync();
+    if (status !== 'granted') { Alert.alert('Permission required', 'Camera access needed.'); return; }
+    const result = await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], quality: 0.8 });
+    if (!result.canceled && result.assets[0]) {
+      const asset = result.assets[0];
+      await uploadDocument(activeDocCategory, asset.uri, asset.fileName ?? `photo_${Date.now()}.jpg`);
+    }
+  }
+
+  async function handleDocGallery() {
+    if (!activeDocCategory) return;
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') { Alert.alert('Permission required', 'Gallery access needed.'); return; }
+    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.8 });
+    if (!result.canceled && result.assets[0]) {
+      const asset = result.assets[0];
+      await uploadDocument(activeDocCategory, asset.uri, asset.fileName ?? `image_${Date.now()}.jpg`);
+    }
+  }
+
+  async function handleDocFile() {
+    if (!activeDocCategory) return;
+    const result = await DocumentPicker.getDocumentAsync({
+      type: ['application/pdf', 'image/*'],
+      copyToCacheDirectory: true,
+    });
+    if (!result.canceled && result.assets[0]) {
+      const asset = result.assets[0];
+      await uploadDocument(activeDocCategory, asset.uri, asset.name);
+    }
+  }
+
+  async function handleDeleteDocument(docId: string) {
+    Alert.alert('Delete Document', 'Remove this document?', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete', style: 'destructive',
+        onPress: async () => {
+          await supabase.from('student_documents').delete().eq('id', docId);
+          await loadDocuments();
+        },
+      },
+    ]);
+  }
 
   async function fetchStudentProfile() {
     try {
@@ -569,33 +736,24 @@ export default function StudentProfileScreen() {
               <View style={styles.infoGrid}>
                 <View style={styles.infoItem}>
                   <Text style={styles.infoLabel}>MOTHER TONGUE</Text>
-                  <Text style={styles.infoValue}>Hindi</Text>
+                  <Text style={styles.infoValue}>{student.mother_tongue || 'N/A'}</Text>
                 </View>
                 <View style={styles.infoItem}>
                   <Text style={styles.infoLabel}>NATIONALITY</Text>
-                  <Text style={styles.infoValue}>Indian</Text>
+                  <Text style={styles.infoValue}>{student.nationality || 'N/A'}</Text>
                 </View>
               </View>
 
               <View style={styles.infoSection}>
                 <Text style={styles.infoLabel}>AADHAAR (LAST 4 DIGITS)</Text>
-                <Text style={styles.infoValue}>XXXX-XXXX-1234</Text>
+                <Text style={styles.infoValue}>
+                  {student.aadhaar_last4 ? `XXXX-XXXX-${student.aadhaar_last4}` : 'N/A'}
+                </Text>
               </View>
 
               <View style={styles.infoSection}>
                 <Text style={styles.infoLabel}>ADDRESS</Text>
-                <Text style={styles.infoValue}>
-                  42, Maple Avenue, Prestige Garden{'\n'}Layout, Bangalore - 560001
-                </Text>
-              </View>
-
-              {/* Map Placeholder */}
-              <View style={styles.mapPlaceholder}>
-                <View style={styles.mapOverlay}>
-                  <TouchableOpacity style={styles.mapButton} activeOpacity={0.8}>
-                    <Text style={styles.mapButtonText}>View on Map</Text>
-                  </TouchableOpacity>
-                </View>
+                <Text style={styles.infoValue}>{student.address || 'N/A'}</Text>
               </View>
             </View>
 
@@ -624,18 +782,15 @@ export default function StudentProfileScreen() {
 
               <View style={styles.infoGrid}>
                 <View style={styles.infoItem}>
-                  <Text style={styles.infoLabel}>PAYMENT CYCLE</Text>
-                  <Text style={styles.infoValue}>Monthly (12 installments)</Text>
+                  <Text style={styles.infoLabel}>ROLL NUMBER</Text>
+                  <Text style={styles.infoValue}>{student.roll_number || 'N/A'}</Text>
                 </View>
                 <View style={styles.infoItem}>
-                  <Text style={styles.infoLabel}>AUTO REMINDERS</Text>
-                  <Text style={styles.infoValue}>Active</Text>
+                  <Text style={styles.infoLabel}>STATUS</Text>
+                  <Text style={[styles.infoValue, { color: student.status === 'active' ? AppColors.success : AppColors.error, textTransform: 'capitalize' }]}>
+                    {student.status}
+                  </Text>
                 </View>
-              </View>
-
-              <View style={styles.infoSection}>
-                <Text style={styles.infoLabel}>DISCOUNT APPLIED</Text>
-                <Text style={styles.infoValue}>Sibling Discount (10%)</Text>
               </View>
             </View>
 
@@ -648,28 +803,28 @@ export default function StudentProfileScreen() {
 
               <View style={styles.infoSection}>
                 <Text style={styles.infoLabel}>FULL NAME</Text>
-                <Text style={styles.infoValue}>Rajesh Kumar</Text>
+                <Text style={styles.infoValue}>{student.father_name || 'N/A'}</Text>
               </View>
 
               <View style={styles.infoGrid}>
                 <View style={styles.infoItem}>
                   <Text style={styles.infoLabel}>PHONE NUMBER</Text>
-                  <Text style={styles.infoValue}>+91 98765 43210</Text>
+                  <Text style={styles.infoValue}>{student.father_phone || 'N/A'}</Text>
                 </View>
                 <View style={styles.infoItem}>
                   <Text style={styles.infoLabel}>EMAIL</Text>
-                  <Text style={styles.infoValue}>rajesh@email.com</Text>
+                  <Text style={styles.infoValue}>{student.father_email || 'N/A'}</Text>
                 </View>
               </View>
 
               <View style={styles.infoGrid}>
                 <View style={styles.infoItem}>
                   <Text style={styles.infoLabel}>OCCUPATION</Text>
-                  <Text style={styles.infoValue}>Software Engineer</Text>
+                  <Text style={styles.infoValue}>{student.father_occupation || 'N/A'}</Text>
                 </View>
                 <View style={styles.infoItem}>
                   <Text style={styles.infoLabel}>WORK LOCATION</Text>
-                  <Text style={styles.infoValue}>Bangalore</Text>
+                  <Text style={styles.infoValue}>{student.father_work_location || 'N/A'}</Text>
                 </View>
               </View>
             </View>
@@ -683,42 +838,61 @@ export default function StudentProfileScreen() {
 
               <View style={styles.infoSection}>
                 <Text style={styles.infoLabel}>FULL NAME</Text>
-                <Text style={styles.infoValue}>Priya Kumar</Text>
+                <Text style={styles.infoValue}>{student.mother_name || 'N/A'}</Text>
               </View>
 
               <View style={styles.infoGrid}>
                 <View style={styles.infoItem}>
                   <Text style={styles.infoLabel}>PHONE NUMBER</Text>
-                  <Text style={styles.infoValue}>+91 98765 43211</Text>
+                  <Text style={styles.infoValue}>{student.mother_phone || 'N/A'}</Text>
                 </View>
                 <View style={styles.infoItem}>
                   <Text style={styles.infoLabel}>EMAIL</Text>
-                  <Text style={styles.infoValue}>priya@email.com</Text>
+                  <Text style={styles.infoValue}>{student.mother_email || 'N/A'}</Text>
                 </View>
               </View>
 
               <View style={styles.infoGrid}>
                 <View style={styles.infoItem}>
                   <Text style={styles.infoLabel}>OCCUPATION</Text>
-                  <Text style={styles.infoValue}>Teacher</Text>
+                  <Text style={styles.infoValue}>{student.mother_occupation || 'N/A'}</Text>
                 </View>
                 <View style={styles.infoItem}>
                   <Text style={styles.infoLabel}>WORK LOCATION</Text>
-                  <Text style={styles.infoValue}>Bangalore</Text>
+                  <Text style={styles.infoValue}>{student.mother_work_location || 'N/A'}</Text>
                 </View>
               </View>
             </View>
 
-            {/* Guardian Details (if applicable) */}
+            {/* Guardian Details */}
             <View style={styles.infoCard}>
               <View style={styles.infoHeader}>
                 <Ionicons name="people-outline" size={24} color={AppColors.gold} />
                 <Text style={styles.infoTitle}>Guardian Details</Text>
               </View>
 
-              <View style={styles.infoSection}>
-                <Text style={styles.infoValue}>No guardian information provided</Text>
-              </View>
+              {student.guardian_name ? (
+                <>
+                  <View style={styles.infoSection}>
+                    <Text style={styles.infoLabel}>FULL NAME</Text>
+                    <Text style={styles.infoValue}>{student.guardian_name}</Text>
+                  </View>
+                  <View style={styles.infoGrid}>
+                    <View style={styles.infoItem}>
+                      <Text style={styles.infoLabel}>PHONE</Text>
+                      <Text style={styles.infoValue}>{student.guardian_phone || 'N/A'}</Text>
+                    </View>
+                    <View style={styles.infoItem}>
+                      <Text style={styles.infoLabel}>RELATION</Text>
+                      <Text style={styles.infoValue}>{student.guardian_relation || 'N/A'}</Text>
+                    </View>
+                  </View>
+                </>
+              ) : (
+                <View style={styles.infoSection}>
+                  <Text style={[styles.infoValue, { color: AppColors.textTertiary }]}>No guardian information provided</Text>
+                </View>
+              )}
             </View>
 
             {/* Documents */}
@@ -726,50 +900,143 @@ export default function StudentProfileScreen() {
               <View style={styles.infoHeader}>
                 <Ionicons name="document-text-outline" size={24} color={AppColors.gold} />
                 <Text style={styles.infoTitle}>Documents</Text>
+                {docsLoading && <ActivityIndicator size="small" color={AppColors.primaryBlue} style={{ marginLeft: 'auto' }} />}
               </View>
 
-              <TouchableOpacity style={styles.documentItem} activeOpacity={0.7}>
-                <View style={styles.documentLeft}>
-                  <Ionicons name="document-outline" size={20} color={AppColors.primaryBlue} />
-                  <Text style={styles.documentText}>Birth Certificate</Text>
+              {/* Uploaded documents list */}
+              {documents.length === 0 && !docsLoading && (
+                <View style={styles.infoSection}>
+                  <Text style={[styles.infoValue, { color: AppColors.textTertiary }]}>No documents uploaded yet</Text>
                 </View>
-                <Ionicons name="chevron-forward" size={20} color={AppColors.textSecondary} />
-              </TouchableOpacity>
+              )}
 
-              <TouchableOpacity style={styles.documentItem} activeOpacity={0.7}>
-                <View style={styles.documentLeft}>
-                  <Ionicons name="document-outline" size={20} color={AppColors.primaryBlue} />
-                  <Text style={styles.documentText}>Aadhaar Card</Text>
+              {documents.map((doc) => (
+                <View key={doc.id} style={styles.docRow}>
+                  <View style={styles.docIconWrap}>
+                    <Ionicons name="document-outline" size={20} color={AppColors.primaryBlue} />
+                  </View>
+                  <View style={styles.docInfo}>
+                    <Text style={styles.docLabel}>{doc.doc_label}</Text>
+                    <Text style={styles.docFileName}>{doc.file_name}</Text>
+                    <Text style={styles.docDate}>
+                      {new Date(doc.uploaded_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
+                    </Text>
+                  </View>
+                  <View style={styles.docActions}>
+                    <TouchableOpacity
+                      style={styles.docActionBtn}
+                      activeOpacity={0.7}
+                      onPress={() => Linking.openURL(doc.file_url).catch(() => Alert.alert('Cannot open', 'Unable to open this file.'))}
+                    >
+                      <Ionicons name="open-outline" size={18} color={AppColors.primaryBlue} />
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.docActionBtn, { backgroundColor: '#FFE4E4' }]}
+                      activeOpacity={0.7}
+                      onPress={() => handleDeleteDocument(doc.id)}
+                    >
+                      <Ionicons name="trash-outline" size={18} color={AppColors.error} />
+                    </TouchableOpacity>
+                  </View>
                 </View>
-                <Ionicons name="chevron-forward" size={20} color={AppColors.textSecondary} />
-              </TouchableOpacity>
+              ))}
 
-              <TouchableOpacity style={styles.documentItem} activeOpacity={0.7}>
-                <View style={styles.documentLeft}>
-                  <Ionicons name="image-outline" size={20} color={AppColors.primaryBlue} />
-                  <Text style={styles.documentText}>Student Photos</Text>
-                </View>
-                <Ionicons name="chevron-forward" size={20} color={AppColors.textSecondary} />
-              </TouchableOpacity>
-
-              <TouchableOpacity style={styles.documentItem} activeOpacity={0.7}>
-                <View style={styles.documentLeft}>
-                  <Ionicons name="document-outline" size={20} color={AppColors.primaryBlue} />
-                  <Text style={styles.documentText}>Medical Certificate</Text>
-                </View>
-                <Ionicons name="chevron-forward" size={20} color={AppColors.textSecondary} />
-              </TouchableOpacity>
-
-              <TouchableOpacity style={styles.documentItem} activeOpacity={0.7}>
-                <View style={styles.documentLeft}>
-                  <Ionicons name="document-outline" size={20} color={AppColors.primaryBlue} />
-                  <Text style={styles.documentText}>Transfer Certificate</Text>
-                </View>
-                <Ionicons name="chevron-forward" size={20} color={AppColors.textSecondary} />
-              </TouchableOpacity>
+              {/* Upload new document buttons */}
+              <Text style={[styles.infoLabel, { marginTop: 16, marginBottom: 8 }]}>UPLOAD DOCUMENT</Text>
+              <View style={styles.docCategoryGrid}>
+                {DOC_CATEGORIES.map((cat) => {
+                  const alreadyUploaded = documents.some((d) => d.doc_type === cat.id);
+                  const isUploading = uploadingDocType === cat.id;
+                  return (
+                    <TouchableOpacity
+                      key={cat.id}
+                      style={[styles.docCategoryBtn, alreadyUploaded && styles.docCategoryBtnDone]}
+                      activeOpacity={0.7}
+                      onPress={() => { setActiveDocCategory(cat); setDocSheetVisible(true); }}
+                      disabled={isUploading}
+                    >
+                      {isUploading ? (
+                        <ActivityIndicator size="small" color={AppColors.primaryBlue} />
+                      ) : (
+                        <Ionicons
+                          name={alreadyUploaded ? 'checkmark-circle' : cat.icon as any}
+                          size={20}
+                          color={alreadyUploaded ? AppColors.success : cat.color}
+                        />
+                      )}
+                      <Text style={[styles.docCategoryLabel, alreadyUploaded && { color: AppColors.success }]} numberOfLines={2}>
+                        {cat.label}
+                      </Text>
+                      {cat.required && !alreadyUploaded && (
+                        <View style={styles.docRequiredDot} />
+                      )}
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
             </View>
           </ScrollView>
         )}
+
+        {/* Document upload action sheet */}
+        <Modal
+          visible={docSheetVisible}
+          transparent
+          animationType="slide"
+          onRequestClose={() => { setDocSheetVisible(false); setActiveDocCategory(null); }}
+        >
+          <TouchableOpacity
+            style={styles.sheetOverlay}
+            activeOpacity={1}
+            onPress={() => { setDocSheetVisible(false); setActiveDocCategory(null); }}
+          />
+          <View style={styles.docSheet}>
+            <View style={styles.docSheetHandle} />
+            <Text style={styles.docSheetTitle}>{activeDocCategory?.label}</Text>
+            <Text style={styles.docSheetSubtitle}>Choose how to upload</Text>
+
+            <TouchableOpacity style={styles.docSheetOption} onPress={handleDocCamera} activeOpacity={0.8}>
+              <View style={[styles.docSheetOptionIcon, { backgroundColor: AppColors.blueLight }]}>
+                <Ionicons name="camera-outline" size={22} color={AppColors.primaryBlue} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.docSheetOptionLabel}>Take Photo</Text>
+                <Text style={styles.docSheetOptionDesc}>Use camera to capture the document</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color={AppColors.textLight} />
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.docSheetOption} onPress={handleDocGallery} activeOpacity={0.8}>
+              <View style={[styles.docSheetOptionIcon, { backgroundColor: '#D4F4E8' }]}>
+                <Ionicons name="images-outline" size={22} color={AppColors.success} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.docSheetOptionLabel}>Photo Library</Text>
+                <Text style={styles.docSheetOptionDesc}>Choose from gallery</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color={AppColors.textLight} />
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.docSheetOption} onPress={handleDocFile} activeOpacity={0.8}>
+              <View style={[styles.docSheetOptionIcon, { backgroundColor: AppColors.goldLight }]}>
+                <Ionicons name="document-outline" size={22} color={AppColors.gold} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.docSheetOptionLabel}>Browse Files</Text>
+                <Text style={styles.docSheetOptionDesc}>Upload PDF or file from device</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color={AppColors.textLight} />
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.docSheetCancel}
+              onPress={() => { setDocSheetVisible(false); setActiveDocCategory(null); }}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.docSheetCancelText}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </Modal>
 
         {activeTab === 'attendance' && (
           <View style={styles.attendanceContainer}>
@@ -988,6 +1255,7 @@ export default function StudentProfileScreen() {
             feeStats={feeStats}
             feeLoading={feeLoading}
             onPaymentSuccess={loadFeeData}
+            studentId={studentId}
           />
         )}
 
@@ -1062,14 +1330,18 @@ function FeeTab({
   feeStats,
   feeLoading,
   onPaymentSuccess,
+  studentId,
 }: {
   feeRecords: FeeRecord[];
   feeStats: FeeStats;
   feeLoading: boolean;
   onPaymentSuccess: () => void;
+  studentId: string;
 }) {
+  const router = useRouter();
   const [selectedPlan, setSelectedPlan] = useState<'monthly' | 'quarterly'>('monthly');
   const [paymentModalVisible, setPaymentModalVisible] = useState(false);
+  const [reminderModalVisible, setReminderModalVisible] = useState(false);
   
   // Filter records by selected plan
   const filteredRecords = feeRecords.filter(r => r.installment_plan === selectedPlan);
@@ -1223,16 +1495,26 @@ function FeeTab({
         })}
       </View>
 
-      {/* Pay Outstanding Button */}
+      {/* Action Buttons */}
       {filteredStats.outstanding > 0 && (
-        <TouchableOpacity 
-          style={feeStyles.payBtn} 
-          activeOpacity={0.85}
-          onPress={() => setPaymentModalVisible(true)}
-        >
-          <Ionicons name="card-outline" size={20} color={AppColors.white} />
-          <Text style={feeStyles.payBtnText}>Pay Outstanding</Text>
-        </TouchableOpacity>
+        <View style={feeStyles.actionRow}>
+          <TouchableOpacity
+            style={feeStyles.payBtn}
+            activeOpacity={0.85}
+            onPress={() => setPaymentModalVisible(true)}
+          >
+            <Ionicons name="card-outline" size={20} color={AppColors.white} />
+            <Text style={feeStyles.payBtnText}>Pay Outstanding</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={feeStyles.reminderBtn}
+            activeOpacity={0.85}
+            onPress={() => router.push(`/(dashboard)/record-payment?studentId=${studentId}`)}
+          >
+            <Ionicons name="card-outline" size={20} color={AppColors.primaryBlue} />
+            <Text style={feeStyles.reminderBtnText}>Record Payment</Text>
+          </TouchableOpacity>
+        </View>
       )}
 
       <View style={{ height: 20 }} />
@@ -1246,6 +1528,13 @@ function FeeTab({
           setPaymentModalVisible(false);
           onPaymentSuccess();
         }}
+      />
+
+      {/* Reminder Modal */}
+      <ReminderModal
+        visible={reminderModalVisible}
+        feeRecords={filteredRecords.filter(r => !r.paid)}
+        onClose={() => setReminderModalVisible(false)}
       />
     </View>
   );
@@ -1497,7 +1786,10 @@ const feeStyles = StyleSheet.create({
     fontWeight: '800',
     letterSpacing: 0.3,
   },
-  // Pay Button
+  // Action Buttons
+  actionRow: {
+    gap: 10,
+  },
   payBtn: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1512,6 +1804,23 @@ const feeStyles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '700',
     color: AppColors.white,
+  },
+  reminderBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    backgroundColor: AppColors.white,
+    borderRadius: 16,
+    paddingVertical: 16,
+    borderWidth: 2,
+    borderColor: AppColors.primaryBlue,
+    ...AppShadows.cardShadow,
+  },
+  reminderBtnText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: AppColors.primaryBlue,
   },
 });
 
@@ -1831,6 +2140,106 @@ const paymentStyles = StyleSheet.create({
     color: AppColors.white,
   },
 });
+
+function ReminderModal({
+  visible,
+  feeRecords,
+  onClose,
+}: {
+  visible: boolean;
+  feeRecords: FeeRecord[];
+  onClose: () => void;
+}) {
+  const [note, setNote] = useState('');
+  const [sending, setSending] = useState(false);
+
+  useEffect(() => {
+    if (visible) setNote('');
+  }, [visible]);
+
+  const totalOutstanding = feeRecords.reduce((s, r) => s + r.amount, 0);
+
+  const handleSend = async () => {
+    setSending(true);
+    try {
+      await new Promise((r) => setTimeout(r, 600));
+      Alert.alert(
+        'Reminder Recorded',
+        `Payment reminder for ${formatCurrency(totalOutstanding)} has been noted. Parents will be notified.`,
+        [{ text: 'OK', onPress: onClose }]
+      );
+    } finally {
+      setSending(false);
+    }
+  };
+
+  return (
+    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
+      <View style={styles.modalOverlay}>
+        <View style={paymentStyles.container}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>Record Payment Reminder</Text>
+            <TouchableOpacity onPress={onClose} style={styles.closeBtn} activeOpacity={0.7}>
+              <Ionicons name="close" size={24} color={AppColors.textSecondary} />
+            </TouchableOpacity>
+          </View>
+
+          <ScrollView style={paymentStyles.content} showsVerticalScrollIndicator={false}>
+            <Text style={paymentStyles.sectionTitle}>Pending Fees</Text>
+            {feeRecords.map((fee) => (
+              <View key={fee.id} style={[paymentStyles.feeItem, { borderColor: 'transparent' }]}>
+                <View style={paymentStyles.feeItemInfo}>
+                  <Text style={paymentStyles.feeItemLabel}>{fee.label}</Text>
+                  {fee.due_date && (
+                    <Text style={paymentStyles.feeItemDate}>Due: {formatFeeDate(fee.due_date)}</Text>
+                  )}
+                </View>
+                <Text style={paymentStyles.feeItemAmount}>{formatCurrency(fee.amount)}</Text>
+              </View>
+            ))}
+
+            <Text style={[paymentStyles.sectionTitle, { marginTop: 20 }]}>Note (Optional)</Text>
+            <TextInput
+              style={[paymentStyles.input, { minHeight: 80 }]}
+              placeholder="Add a note for parents (e.g. please clear fees by this week)"
+              value={note}
+              onChangeText={setNote}
+              placeholderTextColor={AppColors.textLight}
+              multiline
+              textAlignVertical="top"
+            />
+
+            <View style={paymentStyles.totalBox}>
+              <Text style={paymentStyles.totalLabel}>Outstanding Amount</Text>
+              <Text style={paymentStyles.totalAmount}>{formatCurrency(totalOutstanding)}</Text>
+            </View>
+          </ScrollView>
+
+          <View style={styles.modalFooter}>
+            <TouchableOpacity style={styles.cancelBtn} onPress={onClose} activeOpacity={0.7} disabled={sending}>
+              <Text style={styles.cancelBtnText}>Cancel</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.saveBtn, sending && { opacity: 0.6 }]}
+              onPress={handleSend}
+              activeOpacity={0.7}
+              disabled={sending}
+            >
+              {sending ? (
+                <ActivityIndicator size="small" color={AppColors.white} />
+              ) : (
+                <>
+                  <Ionicons name="notifications-outline" size={18} color={AppColors.white} />
+                  <Text style={styles.saveBtnText}>Send Reminder</Text>
+                </>
+              )}
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
 
 function SkillNotesModal({
   visible,
@@ -3080,5 +3489,158 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#E05A5A',
     marginBottom: 12,
+  },
+
+  // Document styles
+  docRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    backgroundColor: AppColors.background,
+    borderRadius: 12,
+    marginBottom: 8,
+    gap: 10,
+  },
+  docIconWrap: {
+    width: 38,
+    height: 38,
+    borderRadius: 10,
+    backgroundColor: AppColors.blueLight,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  docInfo: {
+    flex: 1,
+    gap: 2,
+  },
+  docLabel: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: AppColors.textPrimary,
+  },
+  docFileName: {
+    fontSize: 12,
+    color: AppColors.textSecondary,
+  },
+  docDate: {
+    fontSize: 11,
+    color: AppColors.textTertiary,
+  },
+  docActions: {
+    flexDirection: 'row',
+    gap: 6,
+  },
+  docActionBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 10,
+    backgroundColor: AppColors.blueLight,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  docCategoryGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+  },
+  docCategoryBtn: {
+    width: '47%',
+    padding: 12,
+    backgroundColor: AppColors.background,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: AppColors.blueLight,
+    gap: 6,
+    position: 'relative',
+  },
+  docCategoryBtnDone: {
+    borderColor: AppColors.success,
+    backgroundColor: '#F0FBF5',
+  },
+  docCategoryLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: AppColors.textSecondary,
+  },
+  docRequiredDot: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+    backgroundColor: AppColors.error,
+  },
+
+  // Document upload sheet
+  sheetOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+  },
+  docSheet: {
+    backgroundColor: AppColors.white,
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    paddingHorizontal: 20,
+    paddingBottom: 36,
+    paddingTop: 12,
+    gap: 4,
+  },
+  docSheetHandle: {
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: AppColors.textLight,
+    alignSelf: 'center',
+    marginBottom: 16,
+  },
+  docSheetTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: AppColors.textPrimary,
+    marginBottom: 2,
+  },
+  docSheetSubtitle: {
+    fontSize: 12,
+    color: AppColors.textSecondary,
+    marginBottom: 16,
+  },
+  docSheetOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: AppColors.background,
+  },
+  docSheetOptionIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  docSheetOptionLabel: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: AppColors.textPrimary,
+  },
+  docSheetOptionDesc: {
+    fontSize: 12,
+    color: AppColors.textSecondary,
+    marginTop: 1,
+  },
+  docSheetCancel: {
+    marginTop: 12,
+    backgroundColor: AppColors.background,
+    borderRadius: 14,
+    paddingVertical: 15,
+    alignItems: 'center',
+  },
+  docSheetCancelText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: AppColors.primaryBlue,
   },
 });

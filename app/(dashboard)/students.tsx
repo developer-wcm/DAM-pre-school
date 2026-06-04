@@ -3,6 +3,7 @@ import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import {
     ActivityIndicator,
+    Alert,
     FlatList,
     RefreshControl,
     StyleSheet,
@@ -11,6 +12,7 @@ import {
     TouchableOpacity,
     View,
 } from 'react-native';
+import { DEFAULT_SCHOOL_ID } from '../../constants/school';
 import { AppColors, AppShadows } from '../../constants/theme';
 import { useAdmission } from '../../context/admission';
 import { supabase } from '../../lib/supabase';
@@ -50,31 +52,25 @@ function getInitials(name: string): string {
 export default function StudentsScreen() {
   const router = useRouter();
   const { resetAdmissionData } = useAdmission();
+  const schoolId = DEFAULT_SCHOOL_ID;
   const [students, setStudents] = useState<Student[]>([]);
   const [filteredStudents, setFilteredStudents] = useState<Student[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedClass, setSelectedClass] = useState('all');
+  const [overdueCount, setOverdueCount] = useState(0);
 
   async function fetchStudents() {
     try {
-      const studentsRpcRes = await supabase.rpc('get_student_profiles');
-      let data = studentsRpcRes.data;
-      let error = studentsRpcRes.error;
-
-      if (error) {
-        console.warn('[Students] Student RPC unavailable, falling back to students query:', error.message);
-        const fallbackRes = await supabase
-          .from('students')
-          .select('id, full_name, class, roll_number, status')
-          .eq('status', 'active')
-          .order('class', { ascending: true })
-          .order('roll_number', { ascending: true });
-
-        data = fallbackRes.data;
-        error = fallbackRes.error;
-      }
+      // Always use direct query so we can reliably filter active-only
+      const { data, error } = await supabase
+        .from('students')
+        .select('id, full_name, class, roll_number, status')
+        .eq('school_id', schoolId)
+        .eq('status', 'active')
+        .order('class', { ascending: true })
+        .order('full_name', { ascending: true });
 
       if (error) throw error;
       setStudents(data ?? []);
@@ -89,7 +85,50 @@ export default function StudentsScreen() {
 
   useEffect(() => {
     fetchStudents();
+    fetchOverdueCount();
   }, []);
+
+  async function fetchOverdueCount() {
+    try {
+      const today = new Date().toISOString().split('T')[0];
+      const { count } = await supabase
+        .from('fees')
+        .select('id', { count: 'exact', head: true })
+        .eq('school_id', schoolId)
+        .eq('paid', false)
+        .lt('due_date', today);
+      setOverdueCount(count ?? 0);
+    } catch {
+      // silently ignore
+    }
+  }
+
+  async function handleDeleteStudent(student: Student) {
+    Alert.alert(
+      'Remove Student',
+      `Remove "${student.full_name}" from the student list?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Remove',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              const { error } = await supabase
+                .from('students')
+                .update({ status: 'inactive' })
+                .eq('id', student.id);
+              if (error) throw error;
+              // Remove immediately from local list
+              setStudents((prev) => prev.filter((s) => s.id !== student.id));
+            } catch (e: any) {
+              Alert.alert('Error', e.message || 'Could not remove student.');
+            }
+          },
+        },
+      ]
+    );
+  }
 
   // Filter students based on search and class
   useEffect(() => {
@@ -124,10 +163,12 @@ export default function StudentsScreen() {
     const isActive = item.status === 'active';
 
     return (
-      <TouchableOpacity 
-        style={styles.studentCard} 
+      <TouchableOpacity
+        style={styles.studentCard}
         activeOpacity={0.7}
         onPress={() => router.push(`/(dashboard)/student-profile?id=${item.id}`)}
+        onLongPress={() => handleDeleteStudent(item)}
+        delayLongPress={500}
       >
         <View style={[styles.avatar, { backgroundColor: classColor.bg }]}>
           <Text style={[styles.avatarText, { color: classColor.text }]}>
@@ -175,8 +216,19 @@ export default function StudentsScreen() {
             <Text style={styles.countText}>{students.length}</Text>
           </View>
         </View>
-        <TouchableOpacity style={styles.notificationBtn} activeOpacity={0.7}>
+        <TouchableOpacity
+          style={styles.notificationBtn}
+          activeOpacity={0.7}
+          onPress={() => router.push('/(dashboard)/notifications')}
+        >
           <Ionicons name="notifications-outline" size={24} color={AppColors.textPrimary} />
+          {overdueCount > 0 && (
+            <View style={styles.notifBadge}>
+              <Text style={styles.notifBadgeText}>
+                {overdueCount > 99 ? '99+' : overdueCount}
+              </Text>
+            </View>
+          )}
         </TouchableOpacity>
       </View>
 
@@ -310,6 +362,25 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     ...AppShadows.cardShadow,
+  },
+  notifBadge: {
+    position: 'absolute',
+    top: 4,
+    right: 4,
+    minWidth: 16,
+    height: 16,
+    borderRadius: 8,
+    backgroundColor: '#E74C3C',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 3,
+    borderWidth: 1.5,
+    borderColor: AppColors.white,
+  },
+  notifBadgeText: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: AppColors.white,
   },
   searchContainer: {
     flexDirection: 'row',

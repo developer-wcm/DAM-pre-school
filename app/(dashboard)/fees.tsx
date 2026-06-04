@@ -76,9 +76,21 @@ function getInitials(name: string): string {
     .slice(0, 2);
 }
 
+const MONTHS = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December',
+];
+
 export default function FeesScreen() {
   const router = useRouter();
   const schoolId = DEFAULT_SCHOOL_ID;
+
+  const now = new Date();
+  const [selectedMonth, setSelectedMonth] = useState<number>(now.getMonth()); // 0-indexed
+  const [selectedYear, setSelectedYear] = useState<number>(now.getFullYear());
+  const [calendarModalVisible, setCalendarModalVisible] = useState(false);
+  const [pickerMonth, setPickerMonth] = useState<number>(now.getMonth());
+  const [pickerYear, setPickerYear] = useState<number>(now.getFullYear());
 
   const [stats, setStats] = useState<FeeStats>({
     expected: 0,
@@ -90,7 +102,7 @@ export default function FeesScreen() {
   const [overdueStudents, setOverdueStudents] = useState<OverdueStudent[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  
+
   // Payment Modal State
   const [paymentModalVisible, setPaymentModalVisible] = useState(false);
   const [allStudents, setAllStudents] = useState<Student[]>([]);
@@ -103,9 +115,8 @@ export default function FeesScreen() {
   const [loadingFees, setLoadingFees] = useState(false);
   const [submittingPayment, setSubmittingPayment] = useState(false);
 
-  async function fetchFeeData() {
+  async function fetchFeeData(month: number = selectedMonth, year: number = selectedYear) {
     try {
-      // Fetch all students with their fee data
       const { data: students, error: studentsError } = await supabase
         .from('students')
         .select('id, full_name, class')
@@ -114,12 +125,19 @@ export default function FeesScreen() {
 
       if (studentsError) throw studentsError;
 
-      // Fetch all fees (exclude parent records)
+      // Filter fees by the selected month/year using due_date
+      const monthStr = String(month + 1).padStart(2, '0');
+      const dateFrom = `${year}-${monthStr}-01`;
+      const lastDay = new Date(year, month + 1, 0).getDate();
+      const dateTo = `${year}-${monthStr}-${String(lastDay).padStart(2, '0')}`;
+
       const { data: fees, error: feesError } = await supabase
         .from('fees')
         .select('student_id, amount, paid, due_date, installment_number')
         .eq('school_id', schoolId)
-        .neq('installment_number', 0); // Exclude parent records
+        .neq('installment_number', 0)
+        .gte('due_date', dateFrom)
+        .lte('due_date', dateTo);
 
       if (feesError) throw feesError;
 
@@ -206,13 +224,25 @@ export default function FeesScreen() {
   }
 
   useEffect(() => {
-    fetchFeeData();
-  }, [schoolId]);
+    fetchFeeData(selectedMonth, selectedYear);
+  }, [schoolId, selectedMonth, selectedYear]);
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
-    fetchFeeData();
-  }, [schoolId]);
+    fetchFeeData(selectedMonth, selectedYear);
+  }, [schoolId, selectedMonth, selectedYear]);
+
+  function openCalendarModal() {
+    setPickerMonth(selectedMonth);
+    setPickerYear(selectedYear);
+    setCalendarModalVisible(true);
+  }
+
+  function applyCalendarFilter() {
+    setSelectedMonth(pickerMonth);
+    setSelectedYear(pickerYear);
+    setCalendarModalVisible(false);
+  }
 
   const getClassLabel = (classCode: string) => {
     const labels: Record<string, string> = {
@@ -373,9 +403,9 @@ export default function FeesScreen() {
         <View style={styles.header}>
           <View>
             <Text style={styles.headerTitle}>Fee Management</Text>
-            <Text style={styles.headerSubtitle}>Academic Year 2025-26</Text>
+            <Text style={styles.headerSubtitle}>{MONTHS[selectedMonth]} {selectedYear}</Text>
           </View>
-          <TouchableOpacity style={styles.calendarBtn} activeOpacity={0.7}>
+          <TouchableOpacity style={styles.calendarBtn} activeOpacity={0.7} onPress={openCalendarModal}>
             <Ionicons name="calendar-outline" size={24} color={AppColors.primaryBlue} />
           </TouchableOpacity>
         </View>
@@ -410,12 +440,14 @@ export default function FeesScreen() {
               <Text style={styles.statLabel}>EXPECTED</Text>
               <Text style={styles.statValue}>{formatCurrency(stats.expected)}</Text>
             </View>
+            <View style={styles.statDivider} />
             <View style={styles.statItem}>
               <Text style={styles.statLabel}>COLLECTED</Text>
               <Text style={[styles.statValue, { color: AppColors.success }]}>
                 {formatCurrency(stats.collected)}
               </Text>
             </View>
+            <View style={styles.statDivider} />
             <View style={styles.statItem}>
               <Text style={styles.statLabel}>DUE</Text>
               <Text style={[styles.statValue, { color: AppColors.error }]}>
@@ -435,7 +467,7 @@ export default function FeesScreen() {
           </View>
 
           {classData.map((item) => (
-            <View key={item.class} style={styles.classCard}>
+            <View key={item.class} style={[styles.classCard, { borderLeftColor: CLASS_COLORS[item.class] || AppColors.primaryBlue }]}>
               <View style={styles.classHeader}>
                 <View>
                   <Text style={styles.className}>{getClassLabel(item.class)}</Text>
@@ -509,20 +541,93 @@ export default function FeesScreen() {
           </View>
         )}
 
-        <View style={{ height: 100 }} />
+        <View style={{ height: 150 }} />
       </ScrollView>
 
       {/* Record Payment Button */}
       <View style={styles.fabContainer}>
-        <TouchableOpacity 
-          style={styles.fab} 
+        <TouchableOpacity
+          style={styles.fab}
           activeOpacity={0.85}
           onPress={openPaymentModal}
         >
-          <Ionicons name="card-outline" size={24} color={AppColors.white} />
+          <View style={styles.fabIconWrap}>
+            <Ionicons name="card" size={20} color={AppColors.gold} />
+          </View>
           <Text style={styles.fabText}>Record Payment</Text>
+          <Ionicons name="arrow-forward-circle" size={22} color="rgba(255,255,255,0.7)" />
         </TouchableOpacity>
       </View>
+
+      {/* Calendar Picker Modal */}
+      <Modal
+        visible={calendarModalVisible}
+        animationType="fade"
+        transparent={true}
+        onRequestClose={() => setCalendarModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.calendarModal}>
+            <Text style={styles.calendarTitle}>Select Month & Year</Text>
+
+            {/* Year selector */}
+            <View style={styles.yearRow}>
+              <TouchableOpacity
+                onPress={() => setPickerYear((y) => y - 1)}
+                activeOpacity={0.7}
+                style={styles.yearArrowBtn}
+              >
+                <Ionicons name="chevron-back" size={22} color={AppColors.primaryBlue} />
+              </TouchableOpacity>
+              <Text style={styles.yearText}>{pickerYear}</Text>
+              <TouchableOpacity
+                onPress={() => setPickerYear((y) => y + 1)}
+                activeOpacity={0.7}
+                style={styles.yearArrowBtn}
+              >
+                <Ionicons name="chevron-forward" size={22} color={AppColors.primaryBlue} />
+              </TouchableOpacity>
+            </View>
+
+            {/* Month grid */}
+            <View style={styles.monthGrid}>
+              {MONTHS.map((m, idx) => {
+                const isSelected = idx === pickerMonth;
+                return (
+                  <TouchableOpacity
+                    key={m}
+                    style={[styles.monthCell, isSelected && styles.monthCellSelected]}
+                    onPress={() => setPickerMonth(idx)}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={[styles.monthCellText, isSelected && styles.monthCellTextSelected]}>
+                      {m.slice(0, 3)}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+
+            {/* Actions */}
+            <View style={styles.calendarActions}>
+              <TouchableOpacity
+                style={styles.calendarCancelBtn}
+                onPress={() => setCalendarModalVisible(false)}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.calendarCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.calendarApplyBtn}
+                onPress={applyCalendarFilter}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.calendarApplyText}>Apply</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
 
       {/* Payment Modal */}
       <Modal
@@ -533,11 +638,16 @@ export default function FeesScreen() {
       >
         <View style={styles.modalOverlay}>
           <View style={styles.modalContainer}>
+            {/* Drag Handle */}
+            <View style={styles.dragHandle} />
             {/* Modal Header */}
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Record Payment</Text>
-              <TouchableOpacity onPress={closePaymentModal} activeOpacity={0.7}>
-                <Ionicons name="close" size={28} color={AppColors.textPrimary} />
+              <View>
+                <Text style={styles.modalTitle}>Record Payment</Text>
+                <Text style={styles.modalSubtitle}>Select student & fees to pay</Text>
+              </View>
+              <TouchableOpacity onPress={closePaymentModal} activeOpacity={0.7} style={styles.closeBtn}>
+                <Ionicons name="close" size={20} color={AppColors.textSecondary} />
               </TouchableOpacity>
             </View>
 
@@ -721,7 +831,10 @@ export default function FeesScreen() {
                         {submittingPayment ? (
                           <ActivityIndicator size="small" color={AppColors.white} />
                         ) : (
-                          <Text style={styles.submitBtnText}>Record Payment</Text>
+                          <>
+                            <Ionicons name="checkmark-circle" size={20} color={AppColors.gold} />
+                            <Text style={styles.submitBtnText}>Confirm Payment</Text>
+                          </>
                         )}
                       </TouchableOpacity>
                     </>
@@ -848,6 +961,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     flex: 1,
   },
+  statDivider: {
+    width: 1,
+    height: 36,
+    backgroundColor: AppColors.blueLight,
+  },
   statLabel: {
     fontSize: 11,
     fontWeight: '600',
@@ -888,6 +1006,7 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     padding: 16,
     marginBottom: 12,
+    borderLeftWidth: 4,
     ...AppShadows.cardShadow,
   },
   classHeader: {
@@ -1036,7 +1155,7 @@ const styles = StyleSheet.create({
   // FAB
   fabContainer: {
     position: 'absolute',
-    bottom: 24,
+    bottom: 90,
     right: 20,
     left: 20,
   },
@@ -1045,43 +1164,78 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 16,
+    paddingVertical: 17,
     paddingHorizontal: 24,
     borderRadius: 50,
-    ...AppShadows.elevatedShadow,
+    gap: 10,
+    ...AppShadows.floatingShadow,
+    borderWidth: 1.5,
+    borderColor: 'rgba(218,165,32,0.35)',
+  },
+  fabIconWrap: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   fabText: {
     color: AppColors.white,
     fontSize: 16,
     fontWeight: '700',
-    marginLeft: 8,
+    flex: 1,
   },
 
   // Modal
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    backgroundColor: 'rgba(15, 30, 50, 0.55)',
     justifyContent: 'flex-end',
   },
   modalContainer: {
     backgroundColor: AppColors.white,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    paddingTop: 20,
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    paddingTop: 12,
     paddingHorizontal: 20,
     paddingBottom: 40,
-    maxHeight: '90%',
+    maxHeight: '92%',
+  },
+  dragHandle: {
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: AppColors.textLight,
+    alignSelf: 'center',
+    marginBottom: 16,
   },
   modalHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 24,
+    alignItems: 'flex-start',
+    marginBottom: 20,
+    paddingBottom: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: AppColors.blueLight,
   },
   modalTitle: {
-    fontSize: 24,
+    fontSize: 22,
     fontWeight: '800',
     color: AppColors.textPrimary,
+  },
+  modalSubtitle: {
+    fontSize: 13,
+    color: AppColors.textSecondary,
+    marginTop: 3,
+  },
+  closeBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: AppColors.background,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
 
   // Student Selection
@@ -1288,32 +1442,127 @@ const styles = StyleSheet.create({
 
   // Total
   totalCard: {
-    backgroundColor: AppColors.background,
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 20,
+    backgroundColor: AppColors.blueLight,
+    borderRadius: 16,
+    padding: 18,
+    marginBottom: 16,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(30,58,95,0.1)',
   },
   totalLabel: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '600',
     color: AppColors.textSecondary,
   },
   totalAmount: {
-    fontSize: 24,
+    fontSize: 26,
     fontWeight: '800',
     color: AppColors.primaryBlue,
+  },
+
+  // Calendar Picker
+  calendarModal: {
+    backgroundColor: AppColors.white,
+    borderRadius: 24,
+    padding: 24,
+    marginHorizontal: 24,
+    ...AppShadows.floatingShadow,
+  },
+  calendarTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: AppColors.textPrimary,
+    textAlign: 'center',
+    marginBottom: 20,
+  },
+  yearRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 20,
+    gap: 24,
+  },
+  yearArrowBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: AppColors.blueLight,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  yearText: {
+    fontSize: 22,
+    fontWeight: '800',
+    color: AppColors.primaryBlue,
+    minWidth: 70,
+    textAlign: 'center',
+  },
+  monthGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 24,
+  },
+  monthCell: {
+    width: '30%',
+    paddingVertical: 12,
+    borderRadius: 12,
+    backgroundColor: AppColors.background,
+    alignItems: 'center',
+  },
+  monthCellSelected: {
+    backgroundColor: AppColors.primaryBlue,
+  },
+  monthCellText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: AppColors.textSecondary,
+  },
+  monthCellTextSelected: {
+    color: AppColors.white,
+  },
+  calendarActions: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  calendarCancelBtn: {
+    flex: 1,
+    paddingVertical: 14,
+    borderRadius: 12,
+    backgroundColor: AppColors.background,
+    alignItems: 'center',
+  },
+  calendarCancelText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: AppColors.textSecondary,
+  },
+  calendarApplyBtn: {
+    flex: 1,
+    paddingVertical: 14,
+    borderRadius: 12,
+    backgroundColor: AppColors.primaryBlue,
+    alignItems: 'center',
+  },
+  calendarApplyText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: AppColors.white,
   },
 
   // Submit
   submitBtn: {
     backgroundColor: AppColors.primaryBlue,
-    paddingVertical: 16,
-    borderRadius: 12,
+    paddingVertical: 17,
+    borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
+    flexDirection: 'row',
+    gap: 8,
+    ...AppShadows.floatingShadow,
   },
   submitBtnDisabled: {
     opacity: 0.6,

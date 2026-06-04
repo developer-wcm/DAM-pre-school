@@ -144,12 +144,14 @@ export default function AdminDashboardScreen() {
     schoolName: null, nextHolidayName: null, nextHolidayDate: null,
     nextHolidayDateTo: null, nextHolidayDays: null,
   });
+  const [upcomingHolidays, setUpcomingHolidays] = useState<DashboardHolidayRow[]>([]);
   const [activity, setActivity] = useState<ActivityItem[]>([]);
   const [pendingRequests, setPendingRequests] = useState<PendingRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [showPendingModal, setShowPendingModal] = useState(false);
+  const [showCalendarModal, setShowCalendarModal] = useState(false);
 
   // Notification popup state
   const [notifVisible, setNotifVisible] = useState(false);
@@ -247,10 +249,13 @@ export default function AdminDashboardScreen() {
       const holidays = (Array.isArray(holidaysRes.data)
         ? holidaysRes.data
         : holidaysRes.data ? [holidaysRes.data] : []) as DashboardHolidayRow[];
-      const nextHoliday = getNextHoliday(
-        holidays.length > 0 ? holidays : DEMO_HOLIDAYS,
-        todayKey
-      );
+      const sourceHolidays = holidays.length > 0 ? holidays : DEMO_HOLIDAYS;
+      const nextHoliday = getNextHoliday(sourceHolidays, todayKey);
+      const upcoming = sourceHolidays.filter((h) => {
+        const endsOn = h.date_to ?? h.date;
+        return endsOn >= todayKey;
+      });
+      setUpcomingHolidays(upcoming);
 
       setStats({
         totalStudents: students.length,
@@ -507,7 +512,11 @@ export default function AdminDashboardScreen() {
               </Text>
             </TouchableOpacity>
 
-            <View style={[styles.statCard, { backgroundColor: '#FFF0D4' }]}>
+            <TouchableOpacity
+              style={[styles.statCard, { backgroundColor: '#FFF0D4' }]}
+              activeOpacity={0.7}
+              onPress={() => router.push('/(dashboard)/outstanding-fees')}
+            >
               <View style={styles.statHeader}>
                 <View style={[styles.statIconBox, { backgroundColor: '#FFD8A0' }]}>
                   <Ionicons name="wallet-outline" size={16} color="#A05A00" />
@@ -520,9 +529,13 @@ export default function AdminDashboardScreen() {
               <Text style={styles.statSubtext}>
                 {stats.overdueCount > 0 ? `${stats.overdueCount} overdue` : 'No overdue fees'}
               </Text>
-            </View>
+            </TouchableOpacity>
 
-            <View style={[styles.statCard, { backgroundColor: '#F0EEFF' }]}>
+            <TouchableOpacity
+              style={[styles.statCard, { backgroundColor: '#F0EEFF' }]}
+              activeOpacity={0.7}
+              onPress={() => setShowCalendarModal(true)}
+            >
               <View style={styles.statHeader}>
                 <View style={[styles.statIconBox, { backgroundColor: '#FFF0D4' }]}>
                   <Ionicons name="calendar-outline" size={16} color="#D4822A" />
@@ -547,7 +560,7 @@ export default function AdminDashboardScreen() {
               ) : (
                 <Text style={styles.statSubtext}>No upcoming holidays</Text>
               )}
-            </View>
+            </TouchableOpacity>
           </View>
 
           {/* Quick Actions */}
@@ -564,6 +577,8 @@ export default function AdminDashboardScreen() {
                       setShowPendingModal(true);
                     } else if (action.id === 'attendance') {
                       router.push('/(dashboard)/attendance');
+                    } else if (action.id === 'payment') {
+                      router.push('/(dashboard)/record-payment');
                     }
                   }}
                 >
@@ -640,6 +655,99 @@ export default function AdminDashboardScreen() {
           </TouchableOpacity>
         </Animated.View>
       )}
+
+      {/* ── Upcoming Holidays & Events Modal ── */}
+      <Modal
+        visible={showCalendarModal}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setShowCalendarModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContainer}>
+            <View style={styles.modalHeader}>
+              <View style={styles.modalHeaderLeft}>
+                <View style={[styles.modalIconBox, { backgroundColor: '#FFF0D4' }]}>
+                  <Ionicons name="calendar" size={24} color="#D4822A" />
+                </View>
+                <View>
+                  <Text style={styles.modalTitle}>Upcoming Holidays</Text>
+                  <Text style={styles.modalSubtitle}>
+                    {upcomingHolidays.length} event{upcomingHolidays.length !== 1 ? 's' : ''} ahead
+                  </Text>
+                </View>
+              </View>
+              <TouchableOpacity
+                onPress={() => setShowCalendarModal(false)}
+                style={styles.modalCloseBtn}
+                activeOpacity={0.7}
+              >
+                <Ionicons name="close" size={24} color="#5A5A7A" />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView
+              style={styles.modalScroll}
+              contentContainerStyle={styles.modalScrollContent}
+              showsVerticalScrollIndicator={false}
+            >
+              {upcomingHolidays.length === 0 ? (
+                <View style={styles.emptyModal}>
+                  <Ionicons name="calendar-outline" size={64} color="#C4C4D4" />
+                  <Text style={styles.emptyModalTitle}>No Upcoming Holidays</Text>
+                  <Text style={styles.emptyModalText}>
+                    There are no holidays scheduled for the rest of the year.
+                  </Text>
+                </View>
+              ) : (
+                upcomingHolidays.map((h, idx) => {
+                  const startDate = new Date(h.date);
+                  const isMultiDay = h.date_to && h.date_to !== h.date;
+                  const daysUntil = Math.ceil(
+                    (startDate.getTime() - new Date().setHours(0,0,0,0)) / (1000 * 60 * 60 * 24)
+                  );
+                  const isToday = daysUntil === 0;
+                  const isThisWeek = daysUntil > 0 && daysUntil <= 7;
+                  const dotColor = isToday ? '#E05A5A' : isThisWeek ? '#D4822A' : '#7B6FE8';
+                  const bgColor = isToday ? '#FFF0F0' : isThisWeek ? '#FFF8EE' : '#F4F3FA';
+                  return (
+                    <View key={idx} style={[styles.holidayCard, { backgroundColor: bgColor }]}>
+                      <View style={[styles.holidayDot, { backgroundColor: dotColor }]} />
+                      <View style={styles.holidayInfo}>
+                        <Text style={styles.holidayCardName}>{h.name}</Text>
+                        <Text style={styles.holidayCardDate}>
+                          {startDate.toLocaleDateString('en-IN', {
+                            weekday: 'short', day: 'numeric', month: 'short', year: 'numeric',
+                          })}
+                          {isMultiDay && ` – ${new Date(h.date_to!).toLocaleDateString('en-IN', {
+                            day: 'numeric', month: 'short',
+                          })}`}
+                        </Text>
+                        {isToday && (
+                          <View style={styles.holidayTodayBadge}>
+                            <Text style={styles.holidayTodayText}>Today</Text>
+                          </View>
+                        )}
+                      </View>
+                      <View style={[styles.holidayDaysBadge, { backgroundColor: dotColor + '20' }]}>
+                        <Text style={[styles.holidayDaysNum, { color: dotColor }]}>
+                          {isToday ? 'Now' : `${daysUntil}d`}
+                        </Text>
+                        {h.days && h.days > 1 && (
+                          <Text style={[styles.holidayDaysLabel, { color: dotColor }]}>
+                            {h.days} days
+                          </Text>
+                        )}
+                      </View>
+                    </View>
+                  );
+                })
+              )}
+              <View style={{ height: 20 }} />
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
 
       {/* ── Pending Requests Modal ── */}
       <Modal
@@ -1109,5 +1217,66 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '700',
     color: '#FFFFFF',
+  },
+
+  // Holiday cards in modal
+  holidayCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 16,
+    padding: 14,
+    marginBottom: 10,
+    gap: 12,
+  },
+  holidayDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    flexShrink: 0,
+  },
+  holidayInfo: {
+    flex: 1,
+    gap: 4,
+  },
+  holidayCardName: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#1A1A2E',
+  },
+  holidayCardDate: {
+    fontSize: 12,
+    color: '#7A7A9D',
+    fontWeight: '500',
+  },
+  holidayTodayBadge: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#E05A5A',
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    marginTop: 2,
+  },
+  holidayTodayText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#fff',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  holidayDaysBadge: {
+    borderRadius: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    alignItems: 'center',
+    minWidth: 44,
+  },
+  holidayDaysNum: {
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  holidayDaysLabel: {
+    fontSize: 10,
+    fontWeight: '600',
+    marginTop: 1,
   },
 });

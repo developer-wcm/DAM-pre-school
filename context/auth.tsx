@@ -166,6 +166,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // Listen for auth changes (login, logout, token refresh)
     const { data: listener } = supabase.auth.onAuthStateChange(async (event, s) => {
       console.log('Auth event:', event);
+
+      // If token refresh failed, force sign out and redirect to login to
+      // prompt the user to re-authenticate. This helps recover from
+      // "Invalid Refresh Token" errors coming from the refresh endpoint.
+      if (event === 'TOKEN_REFRESH_FAILED') {
+        console.warn('Token refresh failed — forcing sign out');
+        setSession(null);
+        setUser(null);
+        setProfile(null);
+        try {
+          await supabase.auth.signOut();
+        } catch (e) {
+          console.warn('Error signing out after token failure:', e);
+        }
+        router.replace('/login');
+        setLoading(false);
+        return;
+      }
+
       setSession(s);
       setUser(s?.user ?? null);
 
