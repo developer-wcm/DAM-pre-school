@@ -18,12 +18,12 @@ export default function DashboardLayout() {
       <Tabs.Screen
         name="index"
         options={{
-          title: 'Home',
+          title: 'Dashboard',
           tabBarIcon: ({ color, focused }) => (
             <View style={[styles.iconContainer, focused && styles.iconContainerActive]}>
               <Ionicons
                 name={focused ? 'grid' : 'grid-outline'}
-                size={22}
+                size={20}
                 color={focused ? '#4F46E5' : color}
               />
             </View>
@@ -38,7 +38,7 @@ export default function DashboardLayout() {
             <View style={[styles.iconContainer, focused && styles.iconContainerActive]}>
               <Ionicons
                 name={focused ? 'school' : 'school-outline'}
-                size={22}
+                size={20}
                 color={focused ? '#4F46E5' : color}
               />
             </View>
@@ -53,7 +53,7 @@ export default function DashboardLayout() {
             <View style={[styles.iconContainer, focused && styles.iconContainerActive]}>
               <Ionicons
                 name={focused ? 'wallet' : 'wallet-outline'}
-                size={22}
+                size={20}
                 color={focused ? '#4F46E5' : color}
               />
             </View>
@@ -67,9 +67,9 @@ export default function DashboardLayout() {
           tabBarIcon: ({ color, focused }) => (
             <View style={[styles.iconContainer, focused && styles.iconContainerActive]}>
               <Ionicons 
-                name={focused ? 'menu' : 'menu-outline'} 
-                size={24} 
-                color={focused ? AppColors.white : color} 
+                name={focused ? 'apps' : 'apps-outline'} 
+                size={21} 
+                color={focused ? '#4F46E5' : color} 
               />
             </View>
           ),
@@ -110,6 +110,12 @@ export default function DashboardLayout() {
           tabBarStyle: { display: 'none' },
         }}
       />
+      <Tabs.Screen
+        name="events-calendar"
+        options={{
+          href: null,
+        }}
+      />
 
     </Tabs>
   );
@@ -123,29 +129,28 @@ const styles = StyleSheet.create({
     right: 0,
     backgroundColor: AppColors.white,
     borderTopWidth: 0,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    height: Platform.OS === 'ios' ? 88 : 68,
-    paddingBottom: Platform.OS === 'ios' ? 24 : 12,
-    paddingTop: 12,
-    paddingHorizontal: 16,
+    borderTopLeftRadius: 0,
+    borderTopRightRadius: 0,
+    height: Platform.OS === 'ios' ? 82 : 64,
+    paddingBottom: Platform.OS === 'ios' ? 22 : 9,
+    paddingTop: 8,
+    paddingHorizontal: 18,
     ...AppShadows.elevatedShadow,
   },
   iconContainer: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
+    width: 32,
+    height: 26,
+    borderRadius: 8,
     justifyContent: 'center',
     alignItems: 'center',
-    transition: 'all 0.3s ease',
   },
   iconContainerActive: {
-    backgroundColor: '#EEF2FF',
+    backgroundColor: 'transparent',
   },
   tabLabel: {
-    fontSize: 11,
-    fontWeight: '600',
-    marginTop: 2,
+    fontSize: 8,
+    fontWeight: '800',
+    marginTop: 0,
     marginBottom: 0,
   },
 });
