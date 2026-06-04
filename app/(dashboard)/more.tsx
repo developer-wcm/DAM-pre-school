@@ -24,11 +24,11 @@ const MENU_ITEMS = [
   },
   {
     id: 'leave-requests',
-    icon: 'calendar' as const,
+    icon: 'calendar-clear' as const,
     label: 'Leave\nRequests',
     sub: 'Approvals',
-    bg: '#FDE8D0',
-    iconColor: '#F0883E',
+    bg: '#FFE0B6',
+    iconColor: '#F7A23F',
     badge: true,
   },
   {
@@ -76,16 +76,36 @@ const MENU_ITEMS = [
     iconColor: '#6A6A7A',
     badge: false,
   },
-
+  {
+    id: 'data-export',
+    icon: 'cloud-upload' as const,
+    label: 'Data\nExport',
+    sub: 'Backup',
+    bg: '#E7DAFF',
+    iconColor: '#9A68E8',
+    badge: false,
+  },
+  {
+    id: 'data-deletion',
+    icon: 'trash' as const,
+    label: 'Data\nDeletion',
+    sub: 'Cleanup',
+    bg: '#FFD6D6',
+    iconColor: '#F05D5E',
+    badge: false,
+  },
 ];
+
+const ROUTE_MAP = {
+  'staff-attendance': '/(dashboard)/staff-attendance',
+  'staff-management': '/(dashboard)/staff-management',
+  'events-calendar': '/(dashboard)/events-calendar',
+} as const;
 
 export default function MoreScreen() {
   const router = useRouter();
-  const { profile, signOut } = useAuth();
-
-  const initials = profile?.full_name
-    ? profile.full_name.split(' ').map((n) => n[0]).join('').toUpperCase().slice(0, 2)
-    : 'AD';
+    const { profile, signOut } = useAuth();
+  const displayName = profile?.full_name?.trim() || 'Admin';
 
   return (
     <View style={styles.container}>
@@ -99,8 +119,8 @@ export default function MoreScreen() {
             <Text style={styles.headerTitle}>More</Text>
             <Text style={styles.headerSub}>School Management</Text>
           </View>
-          <View style={styles.avatar}>
-            <Text style={styles.avatarText}>{initials}</Text>
+          <View style={styles.avatar} accessibilityLabel={`${displayName} profile`}>
+            <Ionicons name="person" size={25} color="#1F2937" />
             <View style={styles.avatarDot} />
           </View>
         </View>
@@ -113,10 +133,9 @@ export default function MoreScreen() {
               style={styles.card}
               activeOpacity={0.82}
               onPress={() => {
-                if (item.id === 'staff-attendance') {
-                  router.push('/(dashboard)/staff-attendance');
-                } else if (item.id === 'staff-management') {
-                  router.push('/(dashboard)/staff-management');
+                const route = ROUTE_MAP[item.id as keyof typeof ROUTE_MAP];
+                if (route) {
+                  router.push(route);
                 }
               }}
             >
@@ -135,7 +154,7 @@ export default function MoreScreen() {
           <TouchableOpacity style={styles.logoutBtn} onPress={signOut} activeOpacity={0.85}>
             <Ionicons name="log-out-outline" size={20} color="#E05A5A" />
             <Text style={styles.logoutText}>Log Out</Text>
-          </TouchableOpacity>
+          </TouchableOpacity> 
           <Text style={styles.footerText}>DMA PreSchool Manager v2.4.0</Text>
           <Text style={styles.footerText}>
             Need help?{' '}
@@ -150,13 +169,13 @@ export default function MoreScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F0EEF8',
+    backgroundColor: '#F2EAFB',
   },
   scrollContent: {
-    paddingTop: 56,
-    paddingHorizontal: 20,
-    paddingBottom: 32,
-    gap: 20,
+    paddingTop: 62,
+    paddingHorizontal: 25,
+    paddingBottom: 92,
+    gap: 18,
   },
 
   // Header
@@ -164,68 +183,68 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
-    marginBottom: 4,
+    marginBottom: 2,
   },
   headerTitle: {
-    fontSize: 28,
+    fontSize: 23,
     fontWeight: '800',
     color: '#1A1A2E',
-    letterSpacing: -0.5,
+    letterSpacing: 0,
   },
   headerSub: {
-    fontSize: 13,
-    color: '#9A9AB0',
-    marginTop: 2,
+    fontSize: 11,
+    color: '#8E8EA3',
+    marginTop: 1,
   },
   avatar: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: '#E8E4F8',
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: '#FFE7B9',
     justifyContent: 'center',
     alignItems: 'center',
     position: 'relative',
-  },
-  avatarText: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: '#7B6FE8',
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
   },
   avatarDot: {
     position: 'absolute',
-    bottom: 1,
-    right: 1,
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: '#3AAF72',
+    top: -2,
+    right: -2,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#F05D73',
     borderWidth: 2,
-    borderColor: '#F0EEF8',
+    borderColor: '#F2EAFB',
   },
 
   // Grid
   grid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 12,
+    columnGap: 13,
+    rowGap: 13,
   },
   card: {
     width: '47.5%',
     backgroundColor: '#FFFFFF',
-    borderRadius: 20,
-    padding: 18,
-    gap: 10,
+    borderRadius: 13,
+    minHeight: 122,
+    paddingHorizontal: 14,
+    paddingTop: 14,
+    paddingBottom: 13,
     position: 'relative',
-    shadowColor: '#9B8FE0',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.07,
-    shadowRadius: 10,
-    elevation: 2,
+    shadowColor: '#A994D8',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.08,
+    shadowRadius: 16,
+    elevation: 1,
   },
   badge: {
     position: 'absolute',
-    top: 14,
-    right: 14,
+    top: 12,
+    right: 12,
     width: 9,
     height: 9,
     borderRadius: 5,
@@ -234,29 +253,31 @@ const styles = StyleSheet.create({
     borderColor: '#FFFFFF',
   },
   iconCircle: {
-    width: 46,
-    height: 46,
-    borderRadius: 23,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     justifyContent: 'center',
     alignItems: 'center',
+    marginBottom: 28,
   },
   cardLabel: {
-    fontSize: 15,
-    fontWeight: '700',
+    fontSize: 14,
+    fontWeight: '800',
     color: '#1A1A2E',
-    lineHeight: 20,
+    lineHeight: 17,
   },
   cardSub: {
-    fontSize: 12,
+    fontSize: 10,
     color: '#9A9AB0',
-    marginTop: -4,
+    marginTop: 3,
+    fontWeight: '600',
   },
 
   // Footer
   footer: {
     alignItems: 'center',
-    gap: 4,
-    paddingTop: 8,
+    gap: 2,
+    paddingTop: 6,
   },
   logoutBtn: {
     flexDirection: 'row',
@@ -275,9 +296,10 @@ const styles = StyleSheet.create({
     color: '#E05A5A',
   },
   footerText: {
-    fontSize: 12,
+    fontSize: 10,
     color: '#9A9AB0',
     textAlign: 'center',
+    fontWeight: '500',
   },
   footerLink: {
     color: '#7B6FE8',
