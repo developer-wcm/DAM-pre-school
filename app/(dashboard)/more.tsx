@@ -100,6 +100,7 @@ const ROUTE_MAP = {
   'staff-attendance': '/(dashboard)/staff-attendance',
   'staff-management': '/(dashboard)/staff-management',
   'events-calendar': '/(dashboard)/events-calendar',
+  'student-progress': '/(dashboard)/student-progress',
 } as const;
 
 export default function MoreScreen() {
@@ -119,10 +120,15 @@ export default function MoreScreen() {
             <Text style={styles.headerTitle}>More</Text>
             <Text style={styles.headerSub}>School Management</Text>
           </View>
-          <View style={styles.avatar} accessibilityLabel={`${displayName} profile`}>
+          <TouchableOpacity
+            style={styles.avatar}
+            onPress={() => router.push('/(dashboard)/admin-profile')}
+            activeOpacity={0.8}
+            accessibilityLabel={`${displayName} profile`}
+          >
             <Ionicons name="person" size={25} color="#1F2937" />
             <View style={styles.avatarDot} />
-          </View>
+          </TouchableOpacity>
         </View>
 
         {/* Grid */}

@@ -1141,7 +1141,6 @@ const styles = StyleSheet.create({
     marginLeft: 4,
   },
   overdueRight: {
-    alignItems: 'flex-end',
     flexDirection: 'row',
     alignItems: 'center',
   },

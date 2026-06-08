@@ -1,4 +1,4 @@
-export type AuthUserRole = 'admin' | 'principal' | 'teacher' | 'parent' | 'accountant' | null;
+export type AuthUserRole = 'admin' | 'principal' | 'teacher' | 'parent' | null;
 
 export interface AuthProfileLike {
   role: AuthUserRole;
@@ -21,19 +21,13 @@ export function getAuthRedirectTarget(profile: AuthProfileLike | null): string |
     return '/account-pending';
   }
 
-  // Teachers, parents, and accountants need code verification (unless already verified)
-  if (profile.role === 'teacher' || profile.role === 'parent' || profile.role === 'accountant') {
-    // If code is already verified, don't redirect to enter-code
+  if (profile.role === 'teacher' || profile.role === 'parent') {
     if (profile.code_verified) {
-      // For teachers, they still need to select a class
       if (profile.role === 'teacher') {
         return '/select-class';
       }
       if (profile.role === 'parent') {
         return '/(parent)';
-      }
-      if (profile.role === 'accountant') {
-        return '/(accountant)';
       }
     }
     return '/enter-code';

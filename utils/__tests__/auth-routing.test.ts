@@ -47,13 +47,4 @@ describe('getAuthRedirectTarget', () => {
     ).toBe('/(parent)');
   });
 
-  it('routes verified accountants to the accountant group', () => {
-    expect(
-      getAuthRedirectTarget({
-        role: 'accountant',
-        approved: true,
-        code_verified: true,
-      })
-    ).toBe('/(accountant)');
-  });
 });

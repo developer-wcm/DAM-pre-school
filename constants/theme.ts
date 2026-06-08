@@ -22,7 +22,9 @@ export const AppColors = {
   
   // Status Colors
   success: '#2ECC71',           // Green for active/success
+  successLight: '#E8F8F0',      // Light green background
   error: '#E74C3C',             // Red for errors
+  errorLight: '#FDEAEA',        // Light red background
   warning: '#F39C12',           // Orange for warnings
   info: '#3498DB',              // Blue for info
   

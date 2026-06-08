@@ -8,14 +8,12 @@ const ROLE_LABELS: Record<string, string> = {
   teacher: 'School Staff',
   parent: 'Parent',
   admin: 'Admin',
-  accountant: 'Accountant',
 };
 
 const ROLE_ICONS: Record<string, { name: any; bg: string; color: string }> = {
   teacher: { name: 'book-outline', bg: '#C8EDE3', color: '#2A9D6E' },
   parent:  { name: 'people-outline', bg: '#FAD9C8', color: '#D4622A' },
   admin:   { name: 'shield-checkmark-outline', bg: '#E8E4F8', color: '#7B6FE8' },
-  accountant: { name: 'wallet-outline', bg: '#FFF0D4', color: '#A05A00' },
 };
 
 export default function AuthChoiceScreen() {

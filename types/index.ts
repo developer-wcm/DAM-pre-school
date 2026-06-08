@@ -6,7 +6,7 @@
 // User & Auth Types
 // ============================================================================
 
-export type UserRole = 'admin' | 'principal' | 'teacher' | 'parent' | 'accountant';
+export type UserRole = 'admin' | 'principal' | 'teacher' | 'parent';
 
 export interface User {
   id: string;
@@ -405,5 +405,4 @@ export type RootStackParamList = {
   '(dashboard)': undefined;
   '(teacher)': undefined;
   '(parent)': undefined;
-  '(accountant)': undefined;
 };

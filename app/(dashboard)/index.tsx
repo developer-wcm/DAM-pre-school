@@ -16,7 +16,9 @@ import {
 } from 'react-native';
 import { DEFAULT_SCHOOL_ID, DEFAULT_SCHOOL_NAME } from '../../constants/school';
 import { useAuth } from '../../context/auth';
+import { logActivity } from '../../lib/activity';
 import { presentWeightForStatus } from '../../lib/attendance';
+import { getIndianHolidays } from '../../lib/indianHolidays';
 import { supabase } from '../../lib/supabase';
 
 interface DashboardStats {
@@ -69,6 +71,7 @@ interface ActivityItem {
   subtitle: string;
   color: string;
   dot_color: string;
+  created_at: string;
 }
 
 const QUICK_ACTIONS = [
@@ -77,25 +80,10 @@ const QUICK_ACTIONS = [
   { id: 'payment', icon: 'card-outline' as const, label: 'Record\nPayment', color: '#FFF0D4', iconColor: '#D4822A' },
 ];
 
-const DEMO_HOLIDAYS: DashboardHolidayRow[] = [
-  { name: 'Ganesh Chaturthi', date: '2026-09-14', date_to: '2026-09-14', days: 1 },
-  { name: 'Gandhi Jayanthi', date: '2026-10-02', date_to: '2026-10-02', days: 1 },
-  { name: 'Term 1 Break', date: '2026-10-19', date_to: '2026-10-23', days: 5 },
-  { name: 'Annual Prayer Conference', date: '2026-10-30', date_to: '2026-10-30', days: 1 },
-  { name: 'Tentative Holiday', date: '2026-11-02', date_to: '2026-11-02', days: 1 },
-  { name: 'Diwali Holidays', date: '2026-11-09', date_to: '2026-11-10', days: 2 },
-  { name: 'Kanakadasa Jayanti', date: '2026-11-27', date_to: '2026-11-27', days: 1 },
-  { name: 'Term 2 Break / Christmas', date: '2026-12-21', date_to: '2026-12-31', days: 9 },
-  { name: 'New Year', date: '2027-01-01', date_to: '2027-01-01', days: 1 },
-  { name: 'Uttarayan (Makara Sankranti)', date: '2027-01-14', date_to: '2027-01-14', days: 1 },
-  { name: 'Republic Day', date: '2027-01-26', date_to: '2027-01-26', days: 1 },
-  { name: 'Summer Holidays', date: '2027-03-22', date_to: '2027-05-25', days: 65 },
-];
 
 const ROLE_CONFIG: Record<string, { color: string; bg: string; icon: any; label: string }> = {
   teacher: { color: '#2A9D6E', bg: '#D4F4E8', icon: 'school-outline', label: 'Teacher' },
   parent:  { color: '#7B6FE8', bg: '#E8E4F8', icon: 'people-outline', label: 'Parent'  },
-  accountant: { color: '#D4822A', bg: '#FFF0D4', icon: 'cash-outline', label: 'Accountant' },
 };
 
 function getGreeting() {
@@ -128,10 +116,7 @@ function getLocalDateKey(date = new Date()) {
 }
 
 function getNextHoliday(holidays: DashboardHolidayRow[], todayKey: string) {
-  return holidays.find((holiday) => {
-    const endsOn = holiday.date_to ?? holiday.date;
-    return endsOn >= todayKey;
-  }) ?? null;
+  return holidays.find((holiday) => holiday.date >= todayKey) ?? null;
 }
 
 export default function AdminDashboardScreen() {
@@ -211,32 +196,22 @@ export default function AdminDashboardScreen() {
           .eq('school_id', schoolId).eq('date', todayKey)
         : attendanceRpcRes;
 
-      const holidayRpcRes = await supabase.rpc('get_dashboard_next_holiday', {
-        p_today: todayKey,
-      });
-
-      const holidaysRes = holidayRpcRes.error
-        ? await supabase.from('holidays')
-          .select('name, date, date_to, days')
-          .eq('school_id', schoolId)
-          .order('date', { ascending: true })
-          .limit(25)
-        : holidayRpcRes;
-
       if (studentsRpcRes.error) console.warn('[Dashboard] Student RPC unavailable:', studentsRpcRes.error.message);
       if (attendanceRpcRes.error) console.warn('[Dashboard] Attendance RPC unavailable:', attendanceRpcRes.error.message);
 
       if (studentsRes.error) throw studentsRes.error;
       if (attendanceRes.error) throw attendanceRes.error;
       if (feesRes.error) throw feesRes.error;
-      if (activityRes.error) throw activityRes.error;
-      if (holidaysRes.error) throw holidaysRes.error;
+      if (activityRes.error) console.warn('[Dashboard] Activity log unavailable:', activityRes.error.message);
 
       const students = (studentsRes.data ?? []) as DashboardStudentRow[];
       const classCounts: { [key: string]: number } = {};
       students.forEach((s) => { if (s.class) classCounts[s.class] = (classCounts[s.class] || 0) + 1; });
 
-      const todayAttendance = (attendanceRes.data ?? []) as DashboardAttendanceRow[];
+      // Only count attendance for currently active students
+      const activeStudentIds = new Set(students.map((s) => s.id));
+      const todayAttendance = ((attendanceRes.data ?? []) as DashboardAttendanceRow[])
+        .filter((record) => activeStudentIds.has(record.student_id));
       const presentToday = todayAttendance.reduce(
         (sum, record) => sum + presentWeightForStatus(record.status),
         0
@@ -246,15 +221,9 @@ export default function AdminDashboardScreen() {
       const pendingAmount = pendingFees.reduce((sum, f) => sum + Number(f.amount), 0);
       const overdueCount = pendingFees.filter((f) => f.due_date && f.due_date < todayKey).length;
 
-      const holidays = (Array.isArray(holidaysRes.data)
-        ? holidaysRes.data
-        : holidaysRes.data ? [holidaysRes.data] : []) as DashboardHolidayRow[];
-      const sourceHolidays = holidays.length > 0 ? holidays : DEMO_HOLIDAYS;
-      const nextHoliday = getNextHoliday(sourceHolidays, todayKey);
-      const upcoming = sourceHolidays.filter((h) => {
-        const endsOn = h.date_to ?? h.date;
-        return endsOn >= todayKey;
-      });
+      const allHolidays = await getIndianHolidays(schoolId, todayKey);
+      const nextHoliday = getNextHoliday(allHolidays, todayKey);
+      const upcoming = allHolidays.filter((h) => h.date >= todayKey);
       setUpcomingHolidays(upcoming);
 
       setStats({
@@ -316,6 +285,7 @@ export default function AdminDashboardScreen() {
 
   async function handleApprove(userId: string, name: string) {
     setActionLoading(userId);
+    const req = pendingRequests.find((r) => r.id === userId);
     const { error } = await supabase.rpc('approve_profile', { p_user_id: userId });
     setActionLoading(null);
     if (error) {
@@ -323,10 +293,10 @@ export default function AdminDashboardScreen() {
     } else {
       setPendingRequests((prev) => prev.filter((r) => r.id !== userId));
       Alert.alert('Approved', `${name} has been approved and can now access the system.`);
-      // Close modal if no more pending requests
-      if (pendingRequests.length === 1) {
-        setShowPendingModal(false);
-      }
+      if (pendingRequests.length === 1) setShowPendingModal(false);
+      const role = req?.role ?? 'user';
+      const actType = role === 'teacher' ? 'teacher_approved' : 'parent_approved';
+      logActivity(schoolId, actType, `${role.charAt(0).toUpperCase() + role.slice(1)} Approved`, `${name} joined as ${role}`, userId);
     }
   }
 
@@ -346,6 +316,7 @@ export default function AdminDashboardScreen() {
               Alert.alert('Error', error.message);
             } else {
               setPendingRequests((prev) => prev.filter((r) => r.id !== userId));
+              logActivity(schoolId, 'user_rejected', 'Request Rejected', `${name}'s access request was rejected`);
             }
           },
         },
@@ -353,8 +324,6 @@ export default function AdminDashboardScreen() {
     );
   }
 
-  function copyJoinCode() {}
-  function copyTeacherCode() {}
 
   const attendancePct = stats.totalStudents > 0
     ? Math.round((stats.presentToday / stats.totalStudents) * 100) : 0;
@@ -389,7 +358,11 @@ export default function AdminDashboardScreen() {
               <Text style={styles.greetingName}>{profile?.full_name ?? 'Admin'}</Text>
               <Text style={styles.date}>{today}</Text>
             </View>
-            <View style={styles.avatar}>
+            <TouchableOpacity
+              style={styles.avatar}
+              activeOpacity={0.8}
+              onPress={() => router.push('/(dashboard)/admin-profile')}
+            >
               <Text style={styles.avatarText}>{initials}</Text>
               <View style={styles.avatarDot} />
               {pendingRequests.length > 0 && (
@@ -397,7 +370,7 @@ export default function AdminDashboardScreen() {
                   <Text style={styles.avatarBadgeText}>{pendingRequests.length}</Text>
                 </View>
               )}
-            </View>
+            </TouchableOpacity>
           </View>
 
           {/* Pending Approval Requests */}
@@ -613,7 +586,10 @@ export default function AdminDashboardScreen() {
                     </View>
                     <View style={styles.activityText}>
                       <Text style={styles.activityTitle}>{item.title}</Text>
-                      <Text style={styles.activitySubtitle}>{item.subtitle}</Text>
+                      <Text style={styles.activitySubtitle}>
+                        {item.subtitle}
+                        {item.created_at ? `  ·  ${timeAgo(item.created_at)}` : ''}
+                      </Text>
                     </View>
                     <View style={[styles.activityDot, { backgroundColor: item.dot_color }]} />
                   </View>

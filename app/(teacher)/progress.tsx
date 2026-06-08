@@ -1,35 +1,68 @@
 import { COLORS } from '@/constants/admissionTheme';
 import { Ionicons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter } from 'expo-router';
-import { useState } from 'react';
-import { ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { useEffect, useState } from 'react';
+import { ActivityIndicator, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { DEFAULT_SCHOOL_ID } from '../../constants/school';
 import { getSkillsForClass, SKILL_LEVELS, type Skill, type SkillLevel } from '../../constants/progressSkills';
+import { supabase } from '../../lib/supabase';
 
 type Term = 'term1' | 'term2' | 'term3';
 
 type Student = {
   id: string;
   name: string;
-  avatar: string;
   class: string;
-  age: string;
 };
 
-const STUDENTS: Student[] = [
-  { id: '1', name: 'Priya Kumar', avatar: '👧', class: 'JKG', age: '4 Years Old' },
-  { id: '2', name: 'Arjun Singh', avatar: '👦', class: 'JKG', age: '4 Years Old' },
-  { id: '3', name: 'Rohan Mehta', avatar: '🧒', class: 'JKG', age: '4 Years Old' },
-];
-
-const INITIAL_SKILLS: Skill[] = getSkillsForClass('JKG');
+// Map AsyncStorage class slug → DB class code
+const CLASS_CODE_MAP: Record<string, string> = {
+  'play-group': 'PG',
+  'pre-kg': 'PKG',
+  'junior-kg': 'JKG',
+  'senior-kg': 'SKG',
+};
 
 export default function TeacherProgressScreen() {
   const router = useRouter();
   const [selectedTerm, setSelectedTerm] = useState<Term>('term1');
-  const [selectedStudent, setSelectedStudent] = useState<Student>(STUDENTS[0]);
+  const [students, setStudents] = useState<Student[]>([]);
+  const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
   const [showStudentDropdown, setShowStudentDropdown] = useState(false);
-  const [skills, setSkills] = useState<Skill[]>(INITIAL_SKILLS);
+  const [skills, setSkills] = useState<Skill[]>([]);
   const [observationNotes, setObservationNotes] = useState('');
+  const [loadingStudents, setLoadingStudents] = useState(true);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const selectedClass = await AsyncStorage.getItem('selectedClass');
+        const classCode = CLASS_CODE_MAP[selectedClass ?? ''] ?? 'JKG';
+        const { data } = await supabase
+          .from('students')
+          .select('id, full_name, class')
+          .eq('school_id', DEFAULT_SCHOOL_ID)
+          .eq('class', classCode)
+          .eq('status', 'active')
+          .order('full_name');
+        const mapped: Student[] = (data ?? []).map((s: any) => ({
+          id: s.id,
+          name: s.full_name,
+          class: s.class,
+        }));
+        setStudents(mapped);
+        if (mapped.length > 0) {
+          setSelectedStudent(mapped[0]);
+          setSkills(getSkillsForClass(mapped[0].class));
+        }
+      } catch (e) {
+        console.warn('Progress: failed to load students', e);
+      } finally {
+        setLoadingStudents(false);
+      }
+    })();
+  }, []);
 
   const updateSkillLevel = (skillId: string, level: SkillLevel) => {
     setSkills(skills.map(skill => 
@@ -151,55 +184,69 @@ export default function TeacherProgressScreen() {
         {/* Student Selector */}
         <View style={styles.section}>
           <Text style={styles.sectionLabel}>STUDENT</Text>
-          <TouchableOpacity
-            style={styles.studentSelector}
-            onPress={() => setShowStudentDropdown(!showStudentDropdown)}
-            activeOpacity={0.8}
-          >
-            <View style={styles.studentInfo}>
-              <View style={styles.studentAvatar}>
-                <Text style={styles.studentAvatarEmoji}>{selectedStudent.avatar}</Text>
-              </View>
-              <View style={styles.studentDetails}>
-                <Text style={styles.studentName}>{selectedStudent.name}</Text>
-                <Text style={styles.studentClass}>{selectedStudent.class} • {selectedStudent.age}</Text>
-              </View>
+          {loadingStudents ? (
+            <ActivityIndicator color={COLORS.primary} style={{ marginVertical: 12 }} />
+          ) : students.length === 0 ? (
+            <View style={styles.emptyStudents}>
+              <Text style={styles.emptyStudentsText}>No students in your class yet.</Text>
             </View>
-            <Ionicons 
-              name={showStudentDropdown ? "chevron-up" : "chevron-down"} 
-              size={20} 
-              color={COLORS.primary} 
-            />
-          </TouchableOpacity>
-
-          {/* Student Dropdown */}
-          {showStudentDropdown && (
-            <View style={styles.dropdown}>
-              {STUDENTS.map((student) => (
-                <TouchableOpacity
-                  key={student.id}
-                  style={styles.dropdownItem}
-                  onPress={() => {
-                    setSelectedStudent(student);
-                    setShowStudentDropdown(false);
-                  }}
-                  activeOpacity={0.8}
-                >
-                  <View style={styles.studentInfo}>
-                    <View style={styles.studentAvatar}>
-                      <Text style={styles.studentAvatarEmoji}>{student.avatar}</Text>
-                    </View>
-                    <View style={styles.studentDetails}>
-                      <Text style={styles.studentName}>{student.name}</Text>
-                      <Text style={styles.studentClass}>{student.class} • {student.age}</Text>
-                    </View>
+          ) : (
+            <>
+              <TouchableOpacity
+                style={styles.studentSelector}
+                onPress={() => setShowStudentDropdown(!showStudentDropdown)}
+                activeOpacity={0.8}
+              >
+                <View style={styles.studentInfo}>
+                  <View style={styles.studentAvatar}>
+                    <Text style={styles.studentAvatarEmoji}>
+                      {selectedStudent ? selectedStudent.name.charAt(0).toUpperCase() : '?'}
+                    </Text>
                   </View>
-                  {selectedStudent.id === student.id && (
-                    <Ionicons name="checkmark" size={20} color={COLORS.primary} />
-                  )}
-                </TouchableOpacity>
-              ))}
-            </View>
+                  <View style={styles.studentDetails}>
+                    <Text style={styles.studentName}>{selectedStudent?.name ?? 'Select student'}</Text>
+                    <Text style={styles.studentClass}>{selectedStudent?.class ?? ''}</Text>
+                  </View>
+                </View>
+                <Ionicons
+                  name={showStudentDropdown ? 'chevron-up' : 'chevron-down'}
+                  size={20}
+                  color={COLORS.primary}
+                />
+              </TouchableOpacity>
+
+              {showStudentDropdown && (
+                <View style={styles.dropdown}>
+                  {students.map((student) => (
+                    <TouchableOpacity
+                      key={student.id}
+                      style={styles.dropdownItem}
+                      onPress={() => {
+                        setSelectedStudent(student);
+                        setSkills(getSkillsForClass(student.class));
+                        setShowStudentDropdown(false);
+                      }}
+                      activeOpacity={0.8}
+                    >
+                      <View style={styles.studentInfo}>
+                        <View style={styles.studentAvatar}>
+                          <Text style={styles.studentAvatarEmoji}>
+                            {student.name.charAt(0).toUpperCase()}
+                          </Text>
+                        </View>
+                        <View style={styles.studentDetails}>
+                          <Text style={styles.studentName}>{student.name}</Text>
+                          <Text style={styles.studentClass}>{student.class}</Text>
+                        </View>
+                      </View>
+                      {selectedStudent?.id === student.id && (
+                        <Ionicons name="checkmark" size={20} color={COLORS.primary} />
+                      )}
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
+            </>
           )}
         </View>
 
@@ -570,5 +617,13 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: COLORS.white,
     letterSpacing: 0.3,
+  },
+  emptyStudents: {
+    paddingVertical: 16,
+    alignItems: 'center',
+  },
+  emptyStudentsText: {
+    fontSize: 14,
+    color: COLORS.textSecondary,
   },
 });

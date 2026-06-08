@@ -24,7 +24,7 @@ export default function DashboardLayout() {
               <Ionicons
                 name={focused ? 'grid' : 'grid-outline'}
                 size={20}
-                color={focused ? '#4F46E5' : color}
+                color={focused ? '#0f1869' : color}
               />
             </View>
           ),
@@ -39,7 +39,7 @@ export default function DashboardLayout() {
               <Ionicons
                 name={focused ? 'school' : 'school-outline'}
                 size={20}
-                color={focused ? '#4F46E5' : color}
+                color={focused ? '#0f1869' : color}
               />
             </View>
           ),
@@ -54,7 +54,7 @@ export default function DashboardLayout() {
               <Ionicons
                 name={focused ? 'wallet' : 'wallet-outline'}
                 size={20}
-                color={focused ? '#4F46E5' : color}
+                color={focused ? '#0f1869' : color}
               />
             </View>
           ),
@@ -69,7 +69,7 @@ export default function DashboardLayout() {
               <Ionicons 
                 name={focused ? 'apps' : 'apps-outline'} 
                 size={21} 
-                color={focused ? '#4F46E5' : color} 
+                color={focused ? '#0f1869' : color} 
               />
             </View>
           ),
@@ -126,6 +126,14 @@ export default function DashboardLayout() {
       />
       <Tabs.Screen
         name="record-payment"
+        options={{ href: null }}
+      />
+      <Tabs.Screen
+        name="admin-profile"
+        options={{ href: null }}
+      />
+      <Tabs.Screen
+        name="student-progress"
         options={{ href: null }}
       />
 

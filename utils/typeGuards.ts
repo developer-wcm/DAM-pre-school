@@ -54,7 +54,7 @@ export function isNullOrUndefined(value: unknown): value is null | undefined {
 export function isUserRole(value: unknown): value is UserRole {
   return (
     isString(value) &&
-    ['admin', 'teacher', 'parent', 'accountant'].includes(value)
+    ['admin', 'principal', 'teacher', 'parent'].includes(value)
   );
 }
 

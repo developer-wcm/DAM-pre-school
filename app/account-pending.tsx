@@ -70,15 +70,8 @@ export default function AccountPendingScreen() {
             break;
 
           case 'admin':
-            redirectPath = '/(admin)';
-            break;
-
           case 'principal':
-            redirectPath = '/(principal)';
-            break;
-
-          case 'accountant':
-            redirectPath = '/(accountant)';
+            redirectPath = '/(dashboard)';
             break;
 
           default:

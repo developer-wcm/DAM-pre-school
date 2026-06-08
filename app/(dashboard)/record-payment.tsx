@@ -15,6 +15,7 @@ import {
 } from 'react-native';
 import { DEFAULT_SCHOOL_ID } from '../../constants/school';
 import { AppColors, AppShadows } from '../../constants/theme';
+import { logActivity } from '../../lib/activity';
 import { supabase } from '../../lib/supabase';
 
 interface Student {
@@ -182,6 +183,12 @@ export default function RecordPaymentScreen() {
         if (error) throw error;
       }
 
+      logActivity(
+        DEFAULT_SCHOOL_ID,
+        'payment_received',
+        'Fee Payment Received',
+        `${selectedStudent.full_name} paid ${formatCurrency(totalAmount)} via ${paymentMethod}`
+      );
       Alert.alert(
         'Payment Recorded',
         `${formatCurrency(totalAmount)} payment recorded for ${selectedStudent.full_name}.`,

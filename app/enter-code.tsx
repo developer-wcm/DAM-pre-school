@@ -96,17 +96,6 @@ export default function EnterCodeScreen() {
           validCode = '654321';
           break;
 
-        case 'accountant':
-          validCode = '111111';
-          break;
-
-        case 'principal':
-          validCode = '222222';
-          break;
-
-        case 'admin':
-          validCode = '999999';
-          break;
 
         default:
           validCode = '';
@@ -164,52 +153,6 @@ export default function EnterCodeScreen() {
                 text: 'Continue',
                 onPress: () =>
                   router.replace('/(parent)'),
-              },
-            ]
-          );
-        }
-
-        else if (
-          userRole === 'accountant'
-        ) {
-          Alert.alert(
-            'Success',
-            'Accountant verification successful',
-            [
-              {
-                text: 'Continue',
-                onPress: () =>
-                  router.replace('/(accountant)'),
-              },
-            ]
-          );
-        }
-
-        else if (
-          userRole === 'principal'
-        ) {
-          Alert.alert(
-            'Success',
-            'Principal verification successful',
-            [
-              {
-                text: 'Continue',
-                onPress: () =>
-                  router.replace('/(principal)'),
-              },
-            ]
-          );
-        }
-
-        else if (userRole === 'admin') {
-          Alert.alert(
-            'Success',
-            'Admin verification successful',
-            [
-              {
-                text: 'Continue',
-                onPress: () =>
-                  router.replace('/(admin)'),
               },
             ]
           );

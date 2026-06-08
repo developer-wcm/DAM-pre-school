@@ -105,24 +105,23 @@ export default function StudentsScreen() {
 
   async function handleDeleteStudent(student: Student) {
     Alert.alert(
-      'Remove Student',
-      `Remove "${student.full_name}" from the student list?`,
+      'Delete Student',
+      `Permanently delete "${student.full_name}"? This cannot be undone.`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
-          text: 'Remove',
+          text: 'Delete',
           style: 'destructive',
           onPress: async () => {
             try {
               const { error } = await supabase
                 .from('students')
-                .update({ status: 'inactive' })
+                .delete()
                 .eq('id', student.id);
               if (error) throw error;
-              // Remove immediately from local list
               setStudents((prev) => prev.filter((s) => s.id !== student.id));
             } catch (e: any) {
-              Alert.alert('Error', e.message || 'Could not remove student.');
+              Alert.alert('Error', e.message || 'Could not delete student.');
             }
           },
         },

@@ -474,13 +474,6 @@ export default function AttendanceScreen() {
     ).length;
   };
 
-  const getLateCountForDay = (date: number) => {
-    return filteredStudents.filter((student) =>
-      student.monthlyAttendance.find(
-        (attendance) => attendance.date === date && attendance.status === 'late'
-      )
-    ).length;
-  };
 
   const renderDateNavigator = () => (
     <View style={styles.dateSelector}>

@@ -36,6 +36,7 @@ import {
   saveStudentAttendanceMonth,
 } from '../../lib/attendance';
 import { loadStudentProgress, mergeSkillsWithSaved, saveStudentProgress } from '../../lib/progress';
+import { logActivity } from '../../lib/activity';
 import { supabase } from '../../lib/supabase';
 
 interface StudentProfile {
@@ -1256,6 +1257,8 @@ export default function StudentProfileScreen() {
             feeLoading={feeLoading}
             onPaymentSuccess={loadFeeData}
             studentId={studentId}
+            schoolId={profile?.school_id ?? ''}
+            studentName={student?.full_name ?? ''}
           />
         )}
 
@@ -1331,12 +1334,16 @@ function FeeTab({
   feeLoading,
   onPaymentSuccess,
   studentId,
+  schoolId,
+  studentName,
 }: {
   feeRecords: FeeRecord[];
   feeStats: FeeStats;
   feeLoading: boolean;
   onPaymentSuccess: () => void;
   studentId: string;
+  schoolId: string;
+  studentName: string;
 }) {
   const router = useRouter();
   const [selectedPlan, setSelectedPlan] = useState<'monthly' | 'quarterly'>('monthly');
@@ -1528,6 +1535,8 @@ function FeeTab({
           setPaymentModalVisible(false);
           onPaymentSuccess();
         }}
+        schoolId={schoolId}
+        studentName={studentName}
       />
 
       {/* Reminder Modal */}
@@ -1829,11 +1838,15 @@ function PaymentModal({
   feeRecords,
   onClose,
   onSuccess,
+  schoolId,
+  studentName,
 }: {
   visible: boolean;
   feeRecords: FeeRecord[];
   onClose: () => void;
   onSuccess: () => void;
+  schoolId: string;
+  studentName: string;
 }) {
   const [selectedFees, setSelectedFees] = useState<Set<string>>(new Set());
   const [paymentMethod, setPaymentMethod] = useState<'cash' | 'upi' | 'card' | 'cheque'>('upi');
@@ -1888,9 +1901,8 @@ function PaymentModal({
         if (error) throw error;
       }
 
+      logActivity(schoolId, 'payment_received', 'Fee Payment Received', `${studentName} paid ${formatCurrency(totalAmount)} via ${paymentMethod}`);
       Alert.alert('Success', `Payment of ${formatCurrency(totalAmount)} recorded successfully!`);
-      
-      // Close modal and refresh data
       onSuccess();
     } catch (error) {
       console.error('Payment error:', error);

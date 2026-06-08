@@ -8,7 +8,7 @@ import { getAuthRedirectTarget } from '../utils/auth-routing';
 
 WebBrowser.maybeCompleteAuthSession();
 
-export type UserRole = 'admin' | 'principal' | 'teacher' | 'parent' | 'accountant' | null;
+export type UserRole = 'admin' | 'principal' | 'teacher' | 'parent' | null;
 
 interface Profile {
   id: string;
@@ -141,13 +141,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    if (redirectTarget === '/(accountant)') {
-      if (cleanSegment === 'accountant') {
-        return;
-      }
-      router.replace('/(accountant)' as any);
-      return;
-    }
   }, [loading, profile, router, segments, session, user]);
 
   // ── Auth state listener ───────────────────────────────────────────────────

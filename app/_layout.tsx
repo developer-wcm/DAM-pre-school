@@ -23,7 +23,6 @@ export default function RootLayout() {
             <Stack.Screen name="(teacher)" options={{ headerShown: false }} />
             <Stack.Screen name="teacher-appointments" options={{ headerShown: false }} />
             <Stack.Screen name="parent-appointments" options={{ headerShown: false }} />
-            <Stack.Screen name="(accountant)" options={{ headerShown: false }} />
             <Stack.Screen name="parent-dashboard" options={{ headerShown: false }} />
             <Stack.Screen name="existing-student" options={{ headerShown: false }} />
             <Stack.Screen name="account-pending" options={{ headerShown: false }} />

@@ -25,8 +25,6 @@ function getRoleColor(role: string) {
   switch (role) {
     case 'teacher':
       return { bg: '#F0FDF4', text: '#16A34A' };
-    case 'accountant':
-      return { bg: '#FEF3C7', text: '#D97706' };
     case 'admin':
       return { bg: '#F0F9FF', text: '#0284C7' };
     case 'principal':
@@ -101,7 +99,6 @@ export default function StaffManagementScreen() {
 
   const roleStats = {
     teachers: staff.filter((s) => s.role === 'teacher').length,
-    accountants: staff.filter((s) => s.role === 'accountant').length,
     admins: staff.filter((s) => s.role === 'admin').length,
     principals: staff.filter((s) => s.role === 'principal').length,
   };
@@ -164,10 +161,6 @@ export default function StaffManagementScreen() {
           <Text style={styles.statValue}>{roleStats.teachers}</Text>
         </View>
         <View style={styles.statCard}>
-          <Text style={styles.statLabel}>Accountants</Text>
-          <Text style={styles.statValue}>{roleStats.accountants}</Text>
-        </View>
-        <View style={styles.statCard}>
           <Text style={styles.statLabel}>Admins</Text>
           <Text style={styles.statValue}>{roleStats.admins}</Text>
         </View>
@@ -195,12 +188,21 @@ export default function StaffManagementScreen() {
         </TouchableOpacity>
 
         <TouchableOpacity
-          style={[styles.filterTab, filter === 'accountant' && styles.filterTabActive]}
-          onPress={() => setFilter('accountant')}
+          style={[styles.filterTab, filter === 'admin' && styles.filterTabActive]}
+          onPress={() => setFilter('admin')}
           activeOpacity={0.8}
         >
-          <Text style={[styles.filterTabText, filter === 'accountant' && styles.filterTabTextActive]}>
-            Other ({staff.length - roleStats.teachers})
+          <Text style={[styles.filterTabText, filter === 'admin' && styles.filterTabTextActive]}>
+            Admin ({roleStats.admins})
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.filterTab, filter === 'principal' && styles.filterTabActive]}
+          onPress={() => setFilter('principal')}
+          activeOpacity={0.8}
+        >
+          <Text style={[styles.filterTabText, filter === 'principal' && styles.filterTabTextActive]}>
+            Principal ({roleStats.principals})
           </Text>
         </TouchableOpacity>
       </View>

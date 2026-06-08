@@ -13,6 +13,7 @@ import {
   View,
 } from 'react-native';
 import { useAuth } from '../../context/auth';
+import { getIndianHolidays } from '../../lib/indianHolidays';
 import { supabase } from '../../lib/supabase';
 
 const WEEKDAYS = ['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su'];
@@ -147,6 +148,10 @@ export default function EventsCalendarScreen() {
   const fetchEvents = async () => {
     setLoading(true);
     try {
+      const todayKey = new Date().toISOString().slice(0, 10);
+      // Seed real India holidays into Supabase if not already present
+      await getIndianHolidays(schoolId, todayKey);
+
       // Fetch events and holidays in parallel
       const [eventsResult, holidaysResult] = await Promise.all([
         supabase
