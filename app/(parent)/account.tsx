@@ -4,10 +4,12 @@ import { useRouter } from 'expo-router';
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { COLORS } from '../../constants/admissionTheme';
 import { useAuth } from '../../context/auth';
+import { useChild } from '../../context/child';
 
 export default function ParentAccountScreen() {
-  const { signOut } = useAuth();
+  const { signOut, profile } = useAuth();
   const router = useRouter();
+  const { children, activeChild, setActiveChild } = useChild();
 
   return (
     <View style={styles.container}>
@@ -24,15 +26,61 @@ export default function ParentAccountScreen() {
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
+        {/* Child Switcher — shows only if 2+ children */}
+        {children.length > 1 && (
+          <View style={styles.switcherCard}>
+            <Text style={styles.switcherLabel}>My Children</Text>
+            <View style={styles.switcherRow}>
+              {children.map((child) => {
+                const isActive = activeChild?.id === child.id;
+                const initials = child.full_name.split(' ').map((n) => n[0]).join('').toUpperCase().slice(0, 2);
+                return (
+                  <TouchableOpacity
+                    key={child.id}
+                    style={[styles.switcherPill, isActive && styles.switcherPillActive]}
+                    onPress={() => setActiveChild(child)}
+                    activeOpacity={0.8}
+                  >
+                    <View style={[styles.switcherAvatar, isActive && styles.switcherAvatarActive]}>
+                      <Text style={[styles.switcherInitials, isActive && styles.switcherInitialsActive]}>
+                        {initials}
+                      </Text>
+                    </View>
+                    <View>
+                      <Text style={[styles.switcherName, isActive && styles.switcherNameActive]}>
+                        {child.full_name.split(' ')[0]}
+                      </Text>
+                      <Text style={[styles.switcherClass, isActive && styles.switcherClassActive]}>
+                        {child.class ?? 'No class'}
+                      </Text>
+                    </View>
+                    {isActive && (
+                      <Ionicons name="checkmark-circle" size={18} color="#FFFFFF" style={{ marginLeft: 'auto' }} />
+                    )}
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </View>
+        )}
+
         {/* Student Profile Card */}
         <View style={styles.studentCard}>
           <View style={styles.studentAvatar}>
-            <Text style={styles.avatarEmoji}>👧</Text>
+            <Text style={styles.avatarEmoji}>
+              {activeChild ? activeChild.full_name.charAt(0).toUpperCase() : '👧'}
+            </Text>
             <View style={styles.onlineIndicator} />
           </View>
-          <Text style={styles.studentName}>Priya Kumar</Text>
-          <Text style={styles.studentClass}>Junior KG</Text>
-          <Text style={styles.studentId}>ID: PS-2025-001</Text>
+          <Text style={styles.studentName}>
+            {activeChild?.full_name ?? 'No child linked'}
+          </Text>
+          <Text style={styles.studentClass}>
+            {activeChild?.class ?? 'Class not assigned'}
+          </Text>
+          {activeChild?.roll_number && (
+            <Text style={styles.studentId}>Roll No: {activeChild.roll_number}</Text>
+          )}
         </View>
 
         {/* Book Appointment Button */}
@@ -228,6 +276,35 @@ const styles = StyleSheet.create({
     gap: 20,
   },
 
+  // Child Switcher
+  switcherCard: {
+    backgroundColor: COLORS.white, borderRadius: 20, padding: 16, gap: 12,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06, shadowRadius: 8, elevation: 2,
+  },
+  switcherLabel: { fontSize: 13, fontWeight: '700', color: COLORS.textSecondary },
+  switcherRow: { flexDirection: 'row', gap: 10 },
+  switcherPill: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10,
+    backgroundColor: '#F4F5F9', borderRadius: 14,
+    padding: 12, borderWidth: 2, borderColor: 'transparent',
+  },
+  switcherPillActive: {
+    backgroundColor: COLORS.primary, borderColor: COLORS.primary,
+  },
+  switcherAvatar: {
+    width: 36, height: 36, borderRadius: 18,
+    backgroundColor: COLORS.primarySoft,
+    justifyContent: 'center', alignItems: 'center',
+  },
+  switcherAvatarActive: { backgroundColor: 'rgba(255,255,255,0.25)' },
+  switcherInitials: { fontSize: 14, fontWeight: '800', color: COLORS.primary },
+  switcherInitialsActive: { color: '#FFFFFF' },
+  switcherName: { fontSize: 13, fontWeight: '700', color: COLORS.textPrimary },
+  switcherNameActive: { color: '#FFFFFF' },
+  switcherClass: { fontSize: 11, color: COLORS.textSecondary, marginTop: 1 },
+  switcherClassActive: { color: 'rgba(255,255,255,0.8)' },
+
   // Student Card
   studentCard: {
     alignItems: 'center',
@@ -251,7 +328,9 @@ const styles = StyleSheet.create({
     position: 'relative',
   },
   avatarEmoji: {
-    fontSize: 40,
+    fontSize: 32,
+    fontWeight: '800',
+    color: COLORS.primary,
   },
   onlineIndicator: {
     position: 'absolute',

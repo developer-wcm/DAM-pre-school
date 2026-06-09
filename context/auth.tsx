@@ -118,18 +118,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
 
     if (redirectTarget === '/enter-code') {
-      if (cleanSegment === 'enter-code' || cleanSegment === 'select-class' || cleanSegment === 'enter-class-id') {
+      if (cleanSegment === 'enter-code') {
         return;
       }
       router.replace('/enter-code');
       return;
     }
 
-    if (redirectTarget === '/select-class') {
-      if (cleanSegment === 'select-class' || cleanSegment === 'enter-class-id' || cleanSegment === 'teacher') {
+    if (redirectTarget === '/(teacher)') {
+      if (cleanSegment === 'teacher') {
         return;
       }
-      router.replace('/select-class');
+      router.replace('/(teacher)' as any);
       return;
     }
 
@@ -230,6 +230,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     });
     if (error) return { error: error.message };
     if (!data.user) return { error: 'Sign up failed. Please try again.' };
+    router.replace('/account-pending');
     return { error: null };
   }
 

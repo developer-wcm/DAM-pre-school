@@ -21,14 +21,13 @@ export function getAuthRedirectTarget(profile: AuthProfileLike | null): string |
     return '/account-pending';
   }
 
-  if (profile.role === 'teacher' || profile.role === 'parent') {
+  if (profile.role === 'teacher') {
+    return '/(teacher)';
+  }
+
+  if (profile.role === 'parent') {
     if (profile.code_verified) {
-      if (profile.role === 'teacher') {
-        return '/select-class';
-      }
-      if (profile.role === 'parent') {
-        return '/(parent)';
-      }
+      return '/(parent)';
     }
     return '/enter-code';
   }

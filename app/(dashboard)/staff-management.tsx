@@ -1,4 +1,4 @@
-import { Ionicons } from '@expo/vector-icons';
+﻿import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import {
@@ -21,6 +21,7 @@ type StaffRecord = {
   role: string;
 };
 
+
 function getRoleColor(role: string) {
   switch (role) {
     case 'teacher':
@@ -41,7 +42,6 @@ export default function StaffManagementScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [staff, setStaff] = useState<StaffRecord[]>([]);
   const [filter, setFilter] = useState<string | null>(null);
-
   const fetchStaff = useCallback(async () => {
     console.log('[StaffManagement] Fetching staff list');
 
@@ -146,7 +146,7 @@ export default function StaffManagementScreen() {
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       <View style={styles.header}>
-        <TouchableOpacity style={styles.backButton} onPress={() => router.back()} activeOpacity={0.7}>
+        <TouchableOpacity style={styles.backButton} onPress={() => router.navigate('/(dashboard)/more')} activeOpacity={0.7}>
           <Ionicons name="chevron-back" size={24} color={COLORS.textPrimary} />
         </TouchableOpacity>
         <View style={styles.headerCenter}>
@@ -223,6 +223,7 @@ export default function StaffManagementScreen() {
       />
 
       <View style={{ height: Math.max(insets.bottom, 16) }} />
+
     </SafeAreaView>
   );
 }
@@ -396,4 +397,5 @@ const styles = StyleSheet.create({
     color: COLORS.textSecondary,
     textAlign: 'center',
   },
+
 });

@@ -116,7 +116,7 @@ function getLocalDateKey(date = new Date()) {
 }
 
 function getNextHoliday(holidays: DashboardHolidayRow[], todayKey: string) {
-  return holidays.find((holiday) => holiday.date >= todayKey) ?? null;
+  return holidays.find((holiday) => (holiday.date_to ?? holiday.date) >= todayKey) ?? null;
 }
 
 export default function AdminDashboardScreen() {
@@ -198,6 +198,7 @@ export default function AdminDashboardScreen() {
 
       if (studentsRpcRes.error) console.warn('[Dashboard] Student RPC unavailable:', studentsRpcRes.error.message);
       if (attendanceRpcRes.error) console.warn('[Dashboard] Attendance RPC unavailable:', attendanceRpcRes.error.message);
+      if (pendingRes.error) console.warn('[Dashboard] Pending profiles RPC unavailable:', pendingRes.error.message);
 
       if (studentsRes.error) throw studentsRes.error;
       if (attendanceRes.error) throw attendanceRes.error;
@@ -221,9 +222,14 @@ export default function AdminDashboardScreen() {
       const pendingAmount = pendingFees.reduce((sum, f) => sum + Number(f.amount), 0);
       const overdueCount = pendingFees.filter((f) => f.due_date && f.due_date < todayKey).length;
 
-      const allHolidays = await getIndianHolidays(schoolId, todayKey);
+      let allHolidays: DashboardHolidayRow[] = [];
+      try {
+        allHolidays = await getIndianHolidays(schoolId, todayKey);
+      } catch (e) {
+        console.warn('[Dashboard] Could not load holidays:', e);
+      }
       const nextHoliday = getNextHoliday(allHolidays, todayKey);
-      const upcoming = allHolidays.filter((h) => h.date >= todayKey);
+      const upcoming = allHolidays.filter((h) => (h.date_to ?? h.date) >= todayKey);
       setUpcomingHolidays(upcoming);
 
       setStats({
@@ -291,12 +297,16 @@ export default function AdminDashboardScreen() {
     if (error) {
       Alert.alert('Error', error.message);
     } else {
-      setPendingRequests((prev) => prev.filter((r) => r.id !== userId));
+      setPendingRequests((prev) => {
+        const updated = prev.filter((r) => r.id !== userId);
+        if (updated.length === 0) setShowPendingModal(false);
+        return updated;
+      });
       Alert.alert('Approved', `${name} has been approved and can now access the system.`);
-      if (pendingRequests.length === 1) setShowPendingModal(false);
       const role = req?.role ?? 'user';
       const actType = role === 'teacher' ? 'teacher_approved' : 'parent_approved';
-      logActivity(schoolId, actType, `${role.charAt(0).toUpperCase() + role.slice(1)} Approved`, `${name} joined as ${role}`, userId);
+      logActivity(schoolId, actType, `${role.charAt(0).toUpperCase() + role.slice(1)} Approved`, `${name} joined as ${role}`, userId)
+        .catch((e) => console.warn('[Dashboard] Activity log failed:', e));
     }
   }
 
@@ -316,7 +326,8 @@ export default function AdminDashboardScreen() {
               Alert.alert('Error', error.message);
             } else {
               setPendingRequests((prev) => prev.filter((r) => r.id !== userId));
-              logActivity(schoolId, 'user_rejected', 'Request Rejected', `${name}'s access request was rejected`);
+              logActivity(schoolId, 'user_rejected', 'Request Rejected', `${name}'s access request was rejected`)
+                .catch((e) => console.warn('[Dashboard] Activity log failed:', e));
             }
           },
         },

@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useAuth } from '../../context/auth';
 
 const MENU_ITEMS = [
@@ -77,12 +77,21 @@ const MENU_ITEMS = [
     badge: false,
   },
   {
-    id: 'data-export',
+    id: 'csv-upload',
     icon: 'cloud-upload' as const,
-    label: 'Data\nExport',
-    sub: 'Backup',
+    label: 'Upload\nData',
+    sub: 'CSV Import',
     bg: '#E7DAFF',
     iconColor: '#9A68E8',
+    badge: false,
+  },
+  {
+    id: 'data-export',
+    icon: 'download-outline' as const,
+    label: 'Data\nExport',
+    sub: 'Backup',
+    bg: '#D0F5EE',
+    iconColor: '#2BBFA0',
     badge: false,
   },
   {
@@ -97,10 +106,13 @@ const MENU_ITEMS = [
 ];
 
 const ROUTE_MAP = {
-  'staff-attendance': '/(dashboard)/staff-attendance',
-  'staff-management': '/(dashboard)/staff-management',
-  'events-calendar': '/(dashboard)/events-calendar',
-  'student-progress': '/(dashboard)/student-progress',
+  'staff-attendance':  '/(dashboard)/staff-attendance',
+  'staff-management':  '/(dashboard)/staff-management',
+  'events-calendar':   '/(dashboard)/events-calendar',
+  'student-progress':  '/(dashboard)/student-progress',
+  'user-management':   '/(dashboard)/user-management',
+  'leave-requests':    '/(dashboard)/leave-requests',
+  'csv-upload':        '/(dashboard)/csv-upload',
 } as const;
 
 export default function MoreScreen() {
@@ -142,6 +154,8 @@ export default function MoreScreen() {
                 const route = ROUTE_MAP[item.id as keyof typeof ROUTE_MAP];
                 if (route) {
                   router.push(route);
+                } else {
+                  Alert.alert('Coming Soon', `${item.label.replace('\n', ' ')} will be available in the next update.`);
                 }
               }}
             >

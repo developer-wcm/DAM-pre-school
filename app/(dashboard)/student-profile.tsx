@@ -1,4 +1,4 @@
-import { Ionicons } from '@expo/vector-icons';
+﻿import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
@@ -72,7 +72,7 @@ interface StudentProfile {
   guardian_relation: string | null;
 }
 
-type ProfileTab = 'info' | 'attendance' | 'fees' | 'progress';
+type ProfileTab = 'info' | 'attendance' | 'fees' | 'progress' | 'remarks';
 
 interface FeeRecord {
   id: string;
@@ -243,6 +243,13 @@ export default function StudentProfileScreen() {
   const [uploadingDocType, setUploadingDocType] = useState<string | null>(null);
   const [docSheetVisible, setDocSheetVisible] = useState(false);
   const [activeDocCategory, setActiveDocCategory] = useState<typeof DOC_CATEGORIES[0] | null>(null);
+  // Remarks
+  const [remarks, setRemarks]             = useState<any[]>([]);
+  const [remarksLoading, setRemarksLoading] = useState(false);
+  const [remarkText, setRemarkText]       = useState('');
+  const [remarkSending, setRemarkSending] = useState(false);
+  const [remarkModalVisible, setRemarkModalVisible] = useState(false);
+
   const todayDayNumber = useMemo(() => new Date().getDate(), []);
   const schoolId = DEFAULT_SCHOOL_ID;
   const isViewingCurrentMonth = useMemo(() => {
@@ -280,6 +287,45 @@ export default function StudentProfileScreen() {
       loadProgressSkills();
     }
   }, [activeTab, loadProgressSkills, student?.class]);
+
+  // ── Remarks ────────────────────────────────────────────────────────────────
+
+  const fetchRemarks = useCallback(async () => {
+    if (!studentId) return;
+    setRemarksLoading(true);
+    const { data } = await supabase
+      .from('student_remarks')
+      .select('*')
+      .eq('student_id', studentId)
+      .order('created_at', { ascending: false });
+    setRemarks(data ?? []);
+    setRemarksLoading(false);
+  }, [studentId]);
+
+  useEffect(() => {
+    if (activeTab === 'remarks') fetchRemarks();
+  }, [activeTab, fetchRemarks]);
+
+  async function handleSendRemark() {
+    if (!remarkText.trim() || !studentId) return;
+    setRemarkSending(true);
+    const { error } = await supabase.from('student_remarks').insert({
+      student_id:  studentId,
+      school_id:   schoolId,
+      sent_by:     profile?.id,
+      sender_name: profile?.full_name ?? 'Staff',
+      sender_role: profile?.role ?? 'staff',
+      message:     remarkText.trim(),
+    });
+    setRemarkSending(false);
+    if (error) {
+      Alert.alert('Error', error.message);
+    } else {
+      setRemarkText('');
+      setRemarkModalVisible(false);
+      fetchRemarks();
+    }
+  }
 
   const loadAttendanceMonth = useCallback(async () => {
     if (!studentId) return;
@@ -619,7 +665,7 @@ export default function StudentProfileScreen() {
       <View style={styles.header}>
         <TouchableOpacity
           style={styles.backBtn}
-          onPress={() => router.replace('/(dashboard)/students')}
+          onPress={() => router.navigate('/(dashboard)/students')}
           activeOpacity={0.7}
         >
           <Ionicons name="chevron-back" size={24} color={AppColors.primaryBlue} />
@@ -672,7 +718,12 @@ export default function StudentProfileScreen() {
         </View>
 
         {/* Tabs */}
-        <View style={styles.tabsContainer}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={styles.tabsScrollContainer}
+          contentContainerStyle={styles.tabsContainer}
+        >
           <TouchableOpacity
             style={[styles.tab, activeTab === 'info' && styles.tabActive]}
             onPress={() => setActiveTab('info')}
@@ -709,7 +760,16 @@ export default function StudentProfileScreen() {
               Fees
             </Text>
           </TouchableOpacity>
-        </View>
+          <TouchableOpacity
+            style={[styles.tab, activeTab === 'remarks' && styles.tabActive]}
+            onPress={() => setActiveTab('remarks')}
+            activeOpacity={0.7}
+          >
+            <Text style={[styles.tabText, activeTab === 'remarks' && styles.tabTextActive]}>
+              Remarks
+            </Text>
+          </TouchableOpacity>
+        </ScrollView>
 
         {/* Content */}
         {activeTab === 'info' && (
@@ -1262,8 +1322,167 @@ export default function StudentProfileScreen() {
           />
         )}
 
+        {/* ── Remarks Tab ── */}
+        {activeTab === 'remarks' && (
+          <View style={{ flex: 1, padding: 16, gap: 12 }}>
+
+            {/* Send Remark Button */}
+            <TouchableOpacity
+              style={remarkStyles.sendBtn}
+              onPress={() => setRemarkModalVisible(true)}
+              activeOpacity={0.85}
+            >
+              <Ionicons name="chatbubble-ellipses-outline" size={18} color="#FFFFFF" />
+              <Text style={remarkStyles.sendBtnText}>Send Remark to Parent</Text>
+            </TouchableOpacity>
+
+            {/* Remarks List */}
+            {remarksLoading ? (
+              <ActivityIndicator color="#0F1869" style={{ marginTop: 20 }} />
+            ) : remarks.length === 0 ? (
+              <View style={remarkStyles.emptyBox}>
+                <Ionicons name="chatbubble-outline" size={40} color="#C4C4D4" />
+                <Text style={remarkStyles.emptyTitle}>No Remarks Yet</Text>
+                <Text style={remarkStyles.emptySub}>
+                  Send a remark to the parent about {student?.full_name?.split(' ')[0]}.
+                </Text>
+              </View>
+            ) : (
+              remarks.map((r) => (
+                <View key={r.id} style={remarkStyles.remarkCard}>
+                  <View style={remarkStyles.remarkHeader}>
+                    <View style={remarkStyles.senderBadge}>
+                      <Ionicons
+                        name={r.sender_role === 'teacher' ? 'school-outline' : 'shield-outline'}
+                        size={12}
+                        color="#7B6FE8"
+                      />
+                      <Text style={remarkStyles.senderName}>{r.sender_name}</Text>
+                      <View style={remarkStyles.rolePill}>
+                        <Text style={remarkStyles.rolePillText}>
+                          {r.sender_role === 'teacher' ? 'Teacher' : r.sender_role === 'principal' ? 'Principal' : 'Admin'}
+                        </Text>
+                      </View>
+                    </View>
+                    <Text style={remarkStyles.remarkTime}>
+                      {new Date(r.created_at).toLocaleDateString('en-IN', {
+                        day: 'numeric', month: 'short',
+                      })}{' '}
+                      {new Date(r.created_at).toLocaleTimeString('en-IN', {
+                        hour: '2-digit', minute: '2-digit',
+                      })}
+                    </Text>
+                  </View>
+                  <Text style={remarkStyles.remarkText}>{r.message}</Text>
+                  <View style={remarkStyles.remarkFooter}>
+                    <Ionicons
+                      name={r.is_read ? 'checkmark-done' : 'checkmark'}
+                      size={14}
+                      color={r.is_read ? '#2A9D6E' : '#9A9AB0'}
+                    />
+                    <Text style={[remarkStyles.readStatus,
+                      { color: r.is_read ? '#2A9D6E' : '#9A9AB0' }]}>
+                      {r.is_read ? 'Seen by parent' : 'Not seen yet'}
+                    </Text>
+                  </View>
+                </View>
+              ))
+            )}
+
+            <View style={{ height: 60 }} />
+          </View>
+        )}
+
         <View style={{ height: 40 }} />
       </ScrollView>
+
+      {/* Send Remark Modal */}
+      <Modal
+        visible={remarkModalVisible}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setRemarkModalVisible(false)}
+      >
+        <TouchableOpacity
+          style={remarkStyles.modalOverlay}
+          activeOpacity={1}
+          onPress={() => setRemarkModalVisible(false)}
+        />
+        <View style={remarkStyles.modal}>
+          <View style={remarkStyles.modalHandle} />
+          <View style={remarkStyles.modalHeader}>
+            <View>
+              <Text style={remarkStyles.modalTitle}>Send Remark</Text>
+              <Text style={remarkStyles.modalSub}>
+                To parent of {student?.full_name?.split(' ')[0]}
+              </Text>
+            </View>
+            <TouchableOpacity
+              style={remarkStyles.closeBtn}
+              onPress={() => setRemarkModalVisible(false)}
+            >
+              <Ionicons name="close" size={20} color="#5A5A7A" />
+            </TouchableOpacity>
+          </View>
+
+          {/* Quick presets */}
+          <Text style={remarkStyles.presetsLabel}>Quick Remarks</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false}
+            contentContainerStyle={{ gap: 8, paddingBottom: 8 }}>
+            {[
+              '🌟 Good behaviour today',
+              '✂️ Please trim nails',
+              '🧦 Uniform/socks not clean',
+              '😢 Child was crying today',
+              '🍱 Not eating properly',
+              '💧 Forgot water bottle',
+              '📚 Excellent participation',
+              '🤒 Felt unwell today',
+            ].map((preset) => (
+              <TouchableOpacity
+                key={preset}
+                style={remarkStyles.presetPill}
+                onPress={() => setRemarkText(preset)}
+                activeOpacity={0.8}
+              >
+                <Text style={remarkStyles.presetText}>{preset}</Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+
+          {/* Text input */}
+          <TextInput
+            style={remarkStyles.textInput}
+            placeholder="Type your remark here..."
+            placeholderTextColor="#9A9AB0"
+            value={remarkText}
+            onChangeText={setRemarkText}
+            multiline
+            numberOfLines={4}
+            maxLength={500}
+          />
+          <Text style={remarkStyles.charCount}>{remarkText.length}/500</Text>
+
+          {/* Send button */}
+          <TouchableOpacity
+            style={[remarkStyles.modalSendBtn,
+              (!remarkText.trim() || remarkSending) && remarkStyles.modalSendBtnDisabled]}
+            onPress={handleSendRemark}
+            disabled={!remarkText.trim() || remarkSending}
+            activeOpacity={0.85}
+          >
+            {remarkSending ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <>
+                <Ionicons name="send-outline" size={16} color="#fff" />
+                <Text style={remarkStyles.modalSendBtnText}>Send to Parent</Text>
+              </>
+            )}
+          </TouchableOpacity>
+          <View style={{ height: 20 }} />
+        </View>
+      </Modal>
 
       {/* Edit Modal */}
       <EditStudentModal
@@ -2821,18 +3040,20 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: AppColors.success,
   },
+  tabsScrollContainer: {
+    marginBottom: 20,
+  },
   tabsContainer: {
     flexDirection: 'row',
     backgroundColor: AppColors.white,
     borderRadius: 24,
     padding: 4,
-    marginBottom: 20,
     ...AppShadows.cardShadow,
+    alignItems: 'center',
   },
   tab: {
-    flex: 1,
     paddingVertical: 10,
-    paddingHorizontal: 8,
+    paddingHorizontal: 16,
     borderRadius: 20,
     alignItems: 'center',
   },
@@ -3655,4 +3876,85 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: AppColors.primaryBlue,
   },
+});
+
+// ─── Remark Styles ────────────────────────────────────────────────────────────
+
+const remarkStyles = StyleSheet.create({
+  sendBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: 8, backgroundColor: '#0F1869', borderRadius: 14,
+    paddingVertical: 14,
+  },
+  sendBtnText: { fontSize: 15, fontWeight: '700', color: '#FFFFFF' },
+
+  emptyBox: { paddingVertical: 48, alignItems: 'center', gap: 10 },
+  emptyTitle: { fontSize: 16, fontWeight: '700', color: '#1A1A2E' },
+  emptySub: { fontSize: 13, color: '#9A9AB0', textAlign: 'center', lineHeight: 20 },
+
+  remarkCard: {
+    backgroundColor: '#FFFFFF', borderRadius: 16, padding: 14, gap: 10,
+    borderLeftWidth: 4, borderLeftColor: '#7B6FE8',
+    shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05, shadowRadius: 6, elevation: 2,
+  },
+  remarkHeader: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+  },
+  senderBadge: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  senderName: { fontSize: 13, fontWeight: '700', color: '#1A1A2E' },
+  rolePill: {
+    backgroundColor: '#E8E4F8', borderRadius: 6,
+    paddingHorizontal: 6, paddingVertical: 2,
+  },
+  rolePillText: { fontSize: 10, fontWeight: '700', color: '#7B6FE8' },
+  remarkTime: { fontSize: 11, color: '#9A9AB0' },
+  remarkText: { fontSize: 14, color: '#3A3A5A', lineHeight: 22 },
+  remarkFooter: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  readStatus: { fontSize: 11, fontWeight: '500' },
+
+  modalOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+  },
+  modal: {
+    position: 'absolute', bottom: 0, left: 0, right: 0,
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 28, borderTopRightRadius: 28,
+    paddingHorizontal: 20, paddingTop: 12,
+  },
+  modalHandle: {
+    width: 40, height: 4, borderRadius: 2,
+    backgroundColor: '#E0E0EE', alignSelf: 'center', marginBottom: 16,
+  },
+  modalHeader: {
+    flexDirection: 'row', justifyContent: 'space-between',
+    alignItems: 'flex-start', marginBottom: 16,
+  },
+  modalTitle: { fontSize: 20, fontWeight: '800', color: '#1A1A2E' },
+  modalSub: { fontSize: 13, color: '#7A7A9D', marginTop: 2 },
+  closeBtn: {
+    width: 36, height: 36, borderRadius: 18,
+    backgroundColor: '#F4F5F9', justifyContent: 'center', alignItems: 'center',
+  },
+  presetsLabel: { fontSize: 12, fontWeight: '700', color: '#9A9AB0', marginBottom: 6 },
+  presetPill: {
+    backgroundColor: '#F0EEFB', borderRadius: 20,
+    paddingHorizontal: 14, paddingVertical: 8,
+    borderWidth: 1, borderColor: '#E0DCF8',
+  },
+  presetText: { fontSize: 13, fontWeight: '600', color: '#0F1869' },
+  textInput: {
+    backgroundColor: '#F4F5F9', borderRadius: 14,
+    padding: 14, fontSize: 14, color: '#1A1A2E',
+    minHeight: 100, textAlignVertical: 'top', marginTop: 12,
+  },
+  charCount: { fontSize: 11, color: '#9A9AB0', textAlign: 'right', marginTop: 4 },
+  modalSendBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: 8, backgroundColor: '#0F1869', borderRadius: 14,
+    paddingVertical: 16, marginTop: 12,
+  },
+  modalSendBtnDisabled: { backgroundColor: '#C4C4D4' },
+  modalSendBtnText: { fontSize: 15, fontWeight: '700', color: '#FFFFFF' },
 });

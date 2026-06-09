@@ -1,4 +1,4 @@
-import { LinearGradient } from 'expo-linear-gradient'; 
+﻿import { LinearGradient } from 'expo-linear-gradient'; 
 import { useRouter } from 'expo-router';
 import {
     KeyboardAvoidingView,
@@ -61,7 +61,7 @@ export default function AdmissionStep1() {
       >
         {/* Header */}
         <View style={styles.header}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.backBtn} activeOpacity={0.7}>
+          <TouchableOpacity onPress={() => router.navigate('/(dashboard)/students')} style={styles.backBtn} activeOpacity={0.7}>
             <Text style={styles.backIcon}>←</Text>
           </TouchableOpacity>
           <Text style={styles.headerTitle}>New Admission</Text>
@@ -260,7 +260,7 @@ export default function AdmissionStep1() {
         <View style={[styles.stickyBottom, { bottom: insets.bottom + 16 }]}> 
           <TouchableOpacity
             style={styles.backBtnBottom}
-            onPress={() => router.back()}
+            onPress={() => router.navigate('/(dashboard)/students')}
             activeOpacity={0.8}
           >
             <Text style={styles.backBtnText}>Back</Text>

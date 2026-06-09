@@ -1,4 +1,4 @@
-import { Ionicons } from '@expo/vector-icons';
+﻿import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
@@ -272,7 +272,7 @@ export default function StudentProgressScreen() {
 
         {/* ── Header ── */}
         <LinearGradient colors={['#1E3A5F', '#2C5282']} style={styles.headerGrad}>
-          <TouchableOpacity style={styles.backBtn} onPress={() => router.back()} activeOpacity={0.7}>
+          <TouchableOpacity style={styles.backBtn} onPress={() => router.navigate('/(dashboard)/more')} activeOpacity={0.7}>
             <Ionicons name="arrow-back" size={22} color="#FFF" />
           </TouchableOpacity>
           <View style={styles.headerCenter}>

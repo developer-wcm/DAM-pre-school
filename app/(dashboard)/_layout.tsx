@@ -133,10 +133,25 @@ export default function DashboardLayout() {
         options={{ href: null }}
       />
       <Tabs.Screen
+        name="user-management"
+        options={{ href: null }}
+      />
+      <Tabs.Screen
+        name="leave-requests"
+        options={{ href: null }}
+      />
+      <Tabs.Screen
+        name="jotform"
+        options={{ href: null, tabBarStyle: { display: 'none' } }}
+      />
+      <Tabs.Screen
         name="student-progress"
         options={{ href: null }}
       />
-
+      <Tabs.Screen
+        name="csv-upload"
+        options={{ href: null, tabBarStyle: { display: 'none' } }}
+      />
     </Tabs>
   );
 }

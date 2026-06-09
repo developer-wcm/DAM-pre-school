@@ -187,10 +187,8 @@ export default function RoleSelectionScreen() {
             onPress={() => {
               if (selectedRole) {
                 router.push({
-                  pathname: '/sign-up',
-                  params: {
-                    role: selectedRole,
-                  },
+                  pathname: '/find-school',
+                  params: { role: selectedRole },
                 });
               }
             }}

@@ -1,9 +1,11 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Tabs } from 'expo-router';
 import { StyleSheet } from 'react-native';
+import { ChildProvider } from '../../context/child';
 
 export default function ParentLayout() {
   return (
+    <ChildProvider>
     <Tabs
       screenOptions={{
         headerShown: false,
@@ -42,6 +44,7 @@ export default function ParentLayout() {
         }}
       />
     </Tabs>
+    </ChildProvider>
   );
 }
 

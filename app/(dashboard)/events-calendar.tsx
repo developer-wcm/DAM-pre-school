@@ -1,4 +1,4 @@
-import { Ionicons } from '@expo/vector-icons';
+﻿import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
 import {
@@ -276,7 +276,7 @@ export default function EventsCalendarScreen() {
     <View style={styles.container}>
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         <View style={styles.header}>
-          <TouchableOpacity style={styles.headerIcon} activeOpacity={0.75} onPress={() => router.back()} accessibilityLabel="Go back">
+          <TouchableOpacity style={styles.headerIcon} activeOpacity={0.75} onPress={() => router.navigate('/(dashboard)/more')} accessibilityLabel="Go back">
             <Ionicons name="arrow-back" size={21} color="#111827" />
           </TouchableOpacity>
           <Text style={styles.title}>Academic Calendar</Text>

@@ -1,4 +1,4 @@
-import { Ionicons } from '@expo/vector-icons';
+﻿import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
@@ -99,7 +99,7 @@ export default function AdminProfileScreen() {
 
         {/* Header */}
         <LinearGradient colors={['#1E3A5F', '#2C5282', '#1E3A5F']} style={styles.headerGradient}>
-          <TouchableOpacity style={styles.backBtn} onPress={() => router.back()} activeOpacity={0.7}>
+          <TouchableOpacity style={styles.backBtn} onPress={() => router.navigate('/(dashboard)/')} activeOpacity={0.7}>
             <Ionicons name="arrow-back" size={22} color="#FFFFFF" />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Admin Profile</Text>

@@ -1,0 +1,6 @@
+employee_id,full_name,role,subject,email,phone
+EMP-T-001,Moksha,teacher,English,moksha@gmail.com,9876543220
+EMP-T-002,Jeremiah,teacher,Maths,jeremiah@gmail.com,9876543221
+EMP-T-003,Preethi,teacher,Science,preethi@gmail.com,9876543222
+EMP-A-001,David,admin,Administration,david@gmail.com,9876543223
+EMP-P-001,Mary,principal,Management,mary@gmail.com,9876543224

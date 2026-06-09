@@ -1,4 +1,4 @@
-import { Ionicons } from '@expo/vector-icons';
+﻿import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
@@ -15,6 +15,7 @@ import {
 } from 'react-native';
 import { DEFAULT_SCHOOL_ID } from '../../constants/school';
 import { AppColors, AppShadows } from '../../constants/theme';
+import { useAuth } from '../../context/auth';
 import { logActivity } from '../../lib/activity';
 import { supabase } from '../../lib/supabase';
 
@@ -67,7 +68,8 @@ export default function RecordPaymentScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
   const preloadStudentId = params.studentId as string | undefined;
-  const schoolId = DEFAULT_SCHOOL_ID;
+  const { profile } = useAuth();
+  const schoolId = profile?.school_id ?? DEFAULT_SCHOOL_ID;
 
   const [allStudents, setAllStudents] = useState<Student[]>([]);
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
@@ -184,11 +186,11 @@ export default function RecordPaymentScreen() {
       }
 
       logActivity(
-        DEFAULT_SCHOOL_ID,
+        schoolId,
         'payment_received',
         'Fee Payment Received',
         `${selectedStudent.full_name} paid ${formatCurrency(totalAmount)} via ${paymentMethod}`
-      );
+      ).catch((e) => console.warn('[Payment] Activity log failed:', e));
       Alert.alert(
         'Payment Recorded',
         `${formatCurrency(totalAmount)} payment recorded for ${selectedStudent.full_name}.`,
@@ -213,7 +215,7 @@ export default function RecordPaymentScreen() {
       <LinearGradient colors={['#EDE9F6', '#F0EEF8', '#EAF0F8']} style={{ flex: 1 }}>
         {/* Header */}
         <View style={styles.header}>
-          <TouchableOpacity style={styles.backBtn} onPress={() => router.back()} activeOpacity={0.7}>
+          <TouchableOpacity style={styles.backBtn} onPress={() => router.navigate('/(dashboard)/')} activeOpacity={0.7}>
             <Ionicons name="arrow-back" size={22} color={AppColors.textPrimary} />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Record Payment</Text>
