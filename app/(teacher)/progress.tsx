@@ -1,10 +1,8 @@
 import { COLORS } from '@/constants/admissionTheme';
 import { Ionicons } from '@expo/vector-icons';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
-import { DEFAULT_SCHOOL_ID } from '../../constants/school';
+import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { getSkillsForClass, SKILL_LEVELS, type Skill, type SkillLevel } from '../../constants/progressSkills';
 import { supabase } from '../../lib/supabase';
 
@@ -16,14 +14,6 @@ type Student = {
   class: string;
 };
 
-// Map AsyncStorage class slug → DB class code
-const CLASS_CODE_MAP: Record<string, string> = {
-  'play-group': 'PG',
-  'pre-kg': 'PKG',
-  'junior-kg': 'JKG',
-  'senior-kg': 'SKG',
-};
-
 export default function TeacherProgressScreen() {
   const router = useRouter();
   const [selectedTerm, setSelectedTerm] = useState<Term>('term1');
@@ -33,29 +23,47 @@ export default function TeacherProgressScreen() {
   const [skills, setSkills] = useState<Skill[]>([]);
   const [observationNotes, setObservationNotes] = useState('');
   const [loadingStudents, setLoadingStudents] = useState(true);
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     (async () => {
       try {
-        const selectedClass = await AsyncStorage.getItem('selectedClass');
-        const classCode = CLASS_CODE_MAP[selectedClass ?? ''] ?? 'JKG';
-        const { data } = await supabase
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return;
+
+        // Get teacher's assigned class from profiles
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('assigned_class, assigned_section')
+          .eq('id', user.id)
+          .single();
+
+        if (!profile?.assigned_class) {
+          setLoadingStudents(false);
+          return;
+        }
+
+        let query = supabase
           .from('students')
           .select('id, full_name, class')
-          .eq('school_id', DEFAULT_SCHOOL_ID)
-          .eq('class', classCode)
-          .eq('status', 'active')
+          .eq('class', profile.assigned_class)
           .order('full_name');
+
+        if (profile.assigned_section) {
+          query = query.eq('section', profile.assigned_section);
+        }
+
+        const { data } = await query;
         const mapped: Student[] = (data ?? []).map((s: any) => ({
           id: s.id,
           name: s.full_name,
           class: s.class,
         }));
+
+        // Batch all state updates together — prevents flicker
         setStudents(mapped);
-        if (mapped.length > 0) {
-          setSelectedStudent(mapped[0]);
-          setSkills(getSkillsForClass(mapped[0].class));
-        }
+        setSelectedStudent(mapped[0] ?? null);
+        setSkills(mapped.length > 0 ? getSkillsForClass(mapped[0].class) : []);
       } catch (e) {
         console.warn('Progress: failed to load students', e);
       } finally {
@@ -131,6 +139,17 @@ export default function TeacherProgressScreen() {
       </View>
     </View>
   );
+
+  if (loadingStudents) {
+    return (
+      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center', gap: 12 }]}>
+        <ActivityIndicator size="large" color={COLORS.primary} />
+        <Text style={{ fontSize: 14, color: COLORS.textSecondary, fontWeight: '600' }}>
+          Loading students...
+        </Text>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
@@ -310,9 +329,40 @@ export default function TeacherProgressScreen() {
         </View>
 
         {/* Save Button */}
-        <TouchableOpacity style={styles.saveButton} activeOpacity={0.85}>
-          <Ionicons name="save" size={20} color={COLORS.white} />
-          <Text style={styles.saveButtonText}>Save Assessment</Text>
+        <TouchableOpacity
+          style={[styles.saveButton, saving && { opacity: 0.7 }]}
+          activeOpacity={0.85}
+          disabled={saving || !selectedStudent}
+          onPress={async () => {
+            if (!selectedStudent) return;
+            setSaving(true);
+            try {
+              const { data: { user } } = await supabase.auth.getUser();
+              if (!user) throw new Error('Not logged in');
+              const { error } = await supabase.from('student_progress').upsert({
+                student_id: selectedStudent.id,
+                term: selectedTerm,
+                skills: JSON.stringify(skills),
+                observation_notes: observationNotes,
+                updated_by: user.id,
+                updated_at: new Date().toISOString(),
+              }, { onConflict: 'student_id,term' });
+              if (error) throw error;
+              Alert.alert('✅ Saved!', `Progress for ${selectedStudent.name} saved.`);
+            } catch (err: any) {
+              Alert.alert('Error', err.message || 'Failed to save.');
+            } finally {
+              setSaving(false);
+            }
+          }}
+        >
+          {saving
+            ? <ActivityIndicator color={COLORS.white} size="small" />
+            : <Ionicons name="save" size={20} color={COLORS.white} />
+          }
+          <Text style={styles.saveButtonText}>
+            {saving ? 'Saving...' : 'Save Assessment'}
+          </Text>
         </TouchableOpacity>
 
         <View style={{ height: 100 }} />

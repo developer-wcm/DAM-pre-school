@@ -165,22 +165,54 @@ export default function UserManagementScreen() {
 
   async function handleApprove(user: UserRecord) {
     setActionLoading(user.id);
+
+    // 1. Approve the user
     const { error } = await supabase
       .from('profiles')
       .update({ approved: true })
       .eq('id', user.id);
-    setActionLoading(null);
+
     if (error) {
+      setActionLoading(null);
       showBanner(error.message, false);
-    } else {
-      setUsers((prev) => prev.map((u) => u.id === user.id ? { ...u, approved: true } : u));
-      showBanner(`✓ ${user.full_name ?? 'User'} approved`);
-      const actType = ['teacher', 'principal'].includes(user.role) ? 'teacher_approved' : 'parent_approved';
-      logActivity(schoolId, actType,
-        `${user.role.charAt(0).toUpperCase() + user.role.slice(1)} Approved`,
-        `${user.full_name} joined as ${user.role}`, user.id
-      ).catch(() => {});
+      return;
     }
+
+    setUsers((prev) => prev.map((u) => u.id === user.id ? { ...u, approved: true } : u));
+
+    // 2. Auto-link children if parent
+    if (user.role === 'parent' && user.email) {
+      const { data: matchedStudents, error: matchErr } = await supabase
+        .from('students')
+        .select('id, full_name')
+        .eq('parent_email', user.email)
+        .is('parent_id', null); // only unlinked students
+
+      if (!matchErr && matchedStudents && matchedStudents.length > 0) {
+        // Link all matched students to this parent
+        const studentIds = matchedStudents.map((s) => s.id);
+        await supabase
+          .from('students')
+          .update({ parent_id: user.id })
+          .in('id', studentIds);
+
+        const names = matchedStudents.map((s) => s.full_name).join(', ');
+        showBanner(`✓ ${user.full_name ?? 'Parent'} approved & linked to: ${names}`);
+      } else {
+        // No match found — approved but no child linked
+        showBanner(`✓ ${user.full_name ?? 'Parent'} approved — no child matched, link manually`);
+      }
+    } else {
+      showBanner(`✓ ${user.full_name ?? 'User'} approved`);
+    }
+
+    setActionLoading(null);
+
+    const actType = ['teacher', 'principal'].includes(user.role) ? 'teacher_approved' : 'parent_approved';
+    logActivity(schoolId, actType,
+      `${user.role.charAt(0).toUpperCase() + user.role.slice(1)} Approved`,
+      `${user.full_name} joined as ${user.role}`, user.id
+    ).catch(() => {});
   }
 
   async function handleReject(user: UserRecord) {

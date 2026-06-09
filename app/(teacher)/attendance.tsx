@@ -1,174 +1,205 @@
+import { COLORS } from '@/constants/admissionTheme';
+import { DEFAULT_SCHOOL_ID } from '@/constants/school';
+import { supabase } from '@/lib/supabase';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import { useState } from 'react';
-import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { COLORS } from '../../constants/admissionTheme';
+import { useEffect, useState } from 'react';
+import {
+  ActivityIndicator,
+  Alert,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native';
+
+type AttendanceStatus = 'present' | 'absent' | 'late' | null;
 
 interface Student {
   id: string;
-  name: string;
-  rollNo: number;
-  avatar: string;
-  attendance: 'present' | 'absent' | 'late' | null;
-  monthlyAttendance?: {
-    date: number;
-    status: 'present' | 'absent' | 'holiday' | 'late';
-  }[];
-  attendancePercentage?: number;
+  full_name: string;
+  roll_number: string | null;
+  attendance: AttendanceStatus;
 }
 
-interface DayHeader {
-  day: string;
-  date: number;
-  isToday?: boolean;
+function getTodayKey() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
+
+function formatToday() {
+  return new Date().toLocaleDateString('en-IN', {
+    weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
+  });
+}
+
+function getInitials(name: string) {
+  return name.split(' ').map((n) => n[0]).slice(0, 2).join('').toUpperCase();
+}
+
+const AVATAR_COLORS = ['#F5E6D8','#E8D8C8','#D8E8D8','#E8D8E8','#D8D8E8','#F0E8D8','#D8EEF5','#F5D8E6'];
 
 export default function TeacherAttendanceScreen() {
   const router = useRouter();
-  const [viewMode, setViewMode] = useState<'daily' | 'monthly'>('daily');
-  const [selectedDate] = useState('Thursday, 7 Feb 2026');
-  const [selectedMonth] = useState('January 2026');
-  const [selectedGroup, setSelectedGroup] = useState<'all' | 'playgroup' | 'nursery'>('all');
-  
-  const workingDays = 20;
-  
-  // Monthly grid data
-  const dayHeaders: DayHeader[] = [
-    { day: 'M', date: 1 },
-    { day: 'T', date: 2 },
-    { day: 'W', date: 3, isToday: true },
-    { day: 'T', date: 4 },
-  ];
+  const [students, setStudents] = useState<Student[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [assignedClass, setAssignedClass] = useState('');
+  const [alreadySaved, setAlreadySaved] = useState(false);
 
-  const [students, setStudents] = useState<Student[]>([
-    { 
-      id: '1', 
-      name: 'Priya K.', 
-      rollNo: 12, 
-      avatar: '👧', 
-      attendance: 'present',
-      attendancePercentage: 95,
-      monthlyAttendance: [
-        { date: 1, status: 'present' },
-        { date: 2, status: 'present' },
-        { date: 3, status: 'present' },
-        { date: 4, status: 'absent' },
-      ]
-    },
-    { 
-      id: '2', 
-      name: 'Arjun S.', 
-      rollNo: 13, 
-      avatar: '👦', 
-      attendance: 'absent',
-      attendancePercentage: 58,
-      monthlyAttendance: [
-        { date: 1, status: 'present' },
-        { date: 2, status: 'absent' },
-        { date: 3, status: 'absent' },
-        { date: 4, status: 'absent' },
-      ]
-    },
-    { 
-      id: '3', 
-      name: 'Sofia R.', 
-      rollNo: 14, 
-      avatar: '👧', 
-      attendance: null,
-      attendancePercentage: 82,
-      monthlyAttendance: [
-        { date: 1, status: 'present' },
-        { date: 2, status: 'present' },
-        { date: 3, status: 'present' },
-        { date: 4, status: 'present' },
-      ]
-    },
-    { 
-      id: '4', 
-      name: 'Liam O.', 
-      rollNo: 15, 
-      avatar: '👦', 
-      attendance: 'present',
-      attendancePercentage: 100,
-      monthlyAttendance: [
-        { date: 1, status: 'present' },
-        { date: 2, status: 'present' },
-        { date: 3, status: 'present' },
-        { date: 4, status: 'present' },
-      ]
-    },
-    { 
-      id: '5', 
-      name: 'Noah E.', 
-      rollNo: 16, 
-      avatar: '👦', 
-      attendance: 'present',
-      attendancePercentage: 40,
-      monthlyAttendance: [
-        { date: 1, status: 'absent' },
-        { date: 2, status: 'absent' },
-        { date: 3, status: 'absent' },
-        { date: 4, status: 'absent' },
-      ]
-    },
-  ]);
+  useEffect(() => { loadData(); }, []);
 
-  const markedCount = students.filter(s => s.attendance !== null).length;
-  const presentCount = students.filter(s => s.attendance === 'present').length;
-  const absentCount = students.filter(s => s.attendance === 'absent').length;
+  async function loadData() {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
 
-  const markAttendance = (studentId: string, status: 'present' | 'absent' | 'late') => {
-    setStudents(prev => prev.map(student => 
-      student.id === studentId 
-        ? { ...student, attendance: student.attendance === status ? null : status }
-        : student
-    ));
-  };
+      // Get teacher's assigned class
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('assigned_class, assigned_section')
+        .eq('id', user.id)
+        .single();
 
-  const markAllPresent = () => {
-    setStudents(prev => prev.map(student => ({ ...student, attendance: 'present' as const })));
-  };
+      if (!profile?.assigned_class) {
+        setLoading(false);
+        setRefreshing(false);
+        return;
+      }
 
-  const getAttendanceColor = (status: string | null) => {
-    switch (status) {
-      case 'present': return COLORS.success;
-      case 'absent': return COLORS.error;
-      case 'late': return COLORS.warning;
-      default: return COLORS.lightGray;
+      setAssignedClass(profile.assigned_class);
+
+      // Fetch students in that class
+      let query = supabase
+        .from('students')
+        .select('id, full_name, roll_number')
+        .eq('class', profile.assigned_class)
+        .order('full_name');
+
+      if (profile.assigned_section) {
+        query = query.eq('section', profile.assigned_section);
+      }
+
+      const { data: studentsData } = await query;
+      const studentList = studentsData ?? [];
+
+      // Check if attendance already saved for today
+      const today = getTodayKey();
+      const { data: existingRows } = await supabase
+        .from('attendance')
+        .select('student_id, status')
+        .eq('school_id', DEFAULT_SCHOOL_ID)
+        .eq('date', today)
+        .in('student_id', studentList.map((s: any) => s.id));
+
+      const existingMap: Record<string, AttendanceStatus> = {};
+      (existingRows ?? []).forEach((row: any) => {
+        existingMap[row.student_id] = row.status as AttendanceStatus;
+      });
+
+      const hasSaved = Object.keys(existingMap).length > 0;
+      setAlreadySaved(hasSaved);
+
+      setStudents(studentList.map((s: any) => ({
+        id: s.id,
+        full_name: s.full_name,
+        roll_number: s.roll_number,
+        attendance: existingMap[s.id] ?? null,
+      })));
+    } catch (err) {
+      console.error('Attendance load error:', err);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
     }
-  };
+  }
 
-  const getAttendanceBg = (status: string | null) => {
-    switch (status) {
-      case 'present': return COLORS.successLight;
-      case 'absent': return COLORS.errorLight;
-      case 'late': return COLORS.warningLight;
-      default: return COLORS.lightGray;
+  function markAttendance(studentId: string, status: AttendanceStatus) {
+    if (alreadySaved) return; // don't allow changes after saving
+    setStudents((prev) =>
+      prev.map((s) =>
+        s.id === studentId
+          ? { ...s, attendance: s.attendance === status ? null : status }
+          : s
+      )
+    );
+  }
+
+  function markAllPresent() {
+    if (alreadySaved) return;
+    setStudents((prev) => prev.map((s) => ({ ...s, attendance: 'present' })));
+  }
+
+  async function saveAttendance() {
+    const unmarked = students.filter((s) => s.attendance === null);
+    if (unmarked.length > 0) {
+      Alert.alert(
+        'Unmarked Students',
+        `${unmarked.length} student(s) not marked. Mark all as absent?`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Yes, mark absent',
+            onPress: () => {
+              setStudents((prev) =>
+                prev.map((s) => ({ ...s, attendance: s.attendance ?? 'absent' }))
+              );
+              doSave(students.map((s) => ({ ...s, attendance: s.attendance ?? 'absent' })));
+            },
+          },
+        ]
+      );
+      return;
     }
-  };
+    doSave(students);
+  }
 
-  const getMonthlyStatusColor = (status: string) => {
-    switch (status) {
-      case 'present': return COLORS.success;
-      case 'absent': return COLORS.error;
-      case 'holiday': return '#60A5FA';
-      case 'late': return COLORS.warning;
-      default: return COLORS.lightGray;
+  async function doSave(studentList: Student[]) {
+    setSaving(true);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('Not logged in');
+
+      const today = getTodayKey();
+      const rows = studentList.map((s) => ({
+        school_id: DEFAULT_SCHOOL_ID,
+        student_id: s.id,
+        date: today,
+        status: s.attendance === 'late' ? 'late' : s.attendance === 'absent' ? 'absent' : 'present',
+        marked_by: user.id,
+      }));
+
+      const { error } = await supabase
+        .from('attendance')
+        .upsert(rows, { onConflict: 'student_id,date' });
+
+      if (error) throw error;
+
+      setAlreadySaved(true);
+      Alert.alert('✅ Saved!', `Attendance for ${assignedClass} saved successfully.`);
+    } catch (err: any) {
+      Alert.alert('Error', err.message || 'Failed to save attendance.');
+    } finally {
+      setSaving(false);
     }
-  };
+  }
 
-  const getPercentageColor = (percentage: number) => {
-    if (percentage >= 90) return COLORS.success;
-    if (percentage >= 75) return COLORS.secondary;
-    if (percentage >= 50) return COLORS.warning;
-    return COLORS.error;
-  };
+  const markedCount = students.filter((s) => s.attendance !== null).length;
+  const presentCount = students.filter((s) => s.attendance === 'present').length;
+  const absentCount = students.filter((s) => s.attendance === 'absent').length;
+  const lateCount = students.filter((s) => s.attendance === 'late').length;
 
-  const getPresentCountForDay = (date: number) => {
-    return students.filter(s => 
-      s.monthlyAttendance?.find(a => a.date === date && a.status === 'present')
-    ).length;
-  };
+  if (loading) {
+    return (
+      <View style={[styles.container, styles.centered]}>
+        <ActivityIndicator size="large" color={COLORS.primary} />
+        <Text style={styles.loadingText}>Loading students...</Text>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
@@ -178,774 +209,260 @@ export default function TeacherAttendanceScreen() {
           <Ionicons name="chevron-back" size={24} color={COLORS.textPrimary} />
         </TouchableOpacity>
         <View style={styles.headerCenter}>
-          <Text style={styles.headerTitle}>Attendance — Junior KG</Text>
+          <Text style={styles.headerTitle}>
+            Attendance {assignedClass ? `— ${assignedClass}` : ''}
+          </Text>
         </View>
-        <TouchableOpacity style={styles.markAllButton} onPress={markAllPresent} activeOpacity={0.7}>
-          <Text style={styles.markAllText}>Mark All P</Text>
-        </TouchableOpacity>
+        {!alreadySaved && students.length > 0 && (
+          <TouchableOpacity style={styles.markAllButton} onPress={markAllPresent} activeOpacity={0.7}>
+            <Text style={styles.markAllText}>All P</Text>
+          </TouchableOpacity>
+        )}
+        {alreadySaved && <View style={{ width: 60 }} />}
       </View>
 
-      {/* View Mode Toggle */}
-      <View style={styles.toggleContainer}>
-        <TouchableOpacity 
-          style={[styles.toggleButton, viewMode === 'daily' && styles.toggleButtonActive]}
-          onPress={() => setViewMode('daily')}
-          activeOpacity={0.8}
-        >
-          <Text style={[styles.toggleText, viewMode === 'daily' && styles.toggleTextActive]}>
-            Daily
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity 
-          style={[styles.toggleButton, viewMode === 'monthly' && styles.toggleButtonActive]}
-          onPress={() => setViewMode('monthly')}
-          activeOpacity={0.8}
-        >
-          <Text style={[styles.toggleText, viewMode === 'monthly' && styles.toggleTextActive]}>
-            Monthly Grid
-          </Text>
-        </TouchableOpacity>
+      {/* Date */}
+      <View style={styles.dateBar}>
+        <Ionicons name="calendar-outline" size={16} color={COLORS.primary} />
+        <Text style={styles.dateText}>{formatToday()}</Text>
+        {alreadySaved && (
+          <View style={styles.savedBadge}>
+            <Ionicons name="checkmark-circle" size={14} color={COLORS.success} />
+            <Text style={styles.savedBadgeText}>Saved</Text>
+          </View>
+        )}
       </View>
 
-      {viewMode === 'daily' ? (
-        <>
-          {/* Date Selector */}
-          <View style={styles.dateSelector}>
-            <TouchableOpacity style={styles.dateArrow} activeOpacity={0.7}>
-              <Ionicons name="chevron-back" size={20} color={COLORS.textPrimary} />
-            </TouchableOpacity>
-            <Text style={styles.dateText}>{selectedDate}</Text>
-            <TouchableOpacity style={styles.dateArrow} activeOpacity={0.7}>
-              <Ionicons name="chevron-forward" size={20} color={COLORS.textPrimary} />
-            </TouchableOpacity>
+      {/* Stats */}
+      {students.length > 0 && (
+        <View style={styles.statsCard}>
+          <View style={styles.statItem}>
+            <Text style={styles.statNumber}>{markedCount}</Text>
+            <Text style={styles.statLabel}>Marked</Text>
           </View>
-
-          {/* Stats Card */}
-          <View style={styles.statsCard}>
-            <View style={styles.statItem}>
-              <Text style={styles.statLabel}>Marked: {markedCount}/{students.length}</Text>
-            </View>
-            <View style={styles.statDivider} />
-            <View style={styles.statBadge}>
-              <View style={[styles.statDot, { backgroundColor: COLORS.success }]} />
-              <Text style={styles.statValue}>P: {presentCount}</Text>
-            </View>
-            <View style={styles.statBadge}>
-              <View style={[styles.statDot, { backgroundColor: COLORS.error }]} />
-              <Text style={styles.statValue}>A: {absentCount}</Text>
-            </View>
+          <View style={styles.statDivider} />
+          <View style={styles.statItem}>
+            <Text style={[styles.statNumber, { color: COLORS.success }]}>{presentCount}</Text>
+            <Text style={styles.statLabel}>Present</Text>
           </View>
+          <View style={styles.statDivider} />
+          <View style={styles.statItem}>
+            <Text style={[styles.statNumber, { color: COLORS.error }]}>{absentCount}</Text>
+            <Text style={styles.statLabel}>Absent</Text>
+          </View>
+          <View style={styles.statDivider} />
+          <View style={styles.statItem}>
+            <Text style={[styles.statNumber, { color: COLORS.warning }]}>{lateCount}</Text>
+            <Text style={styles.statLabel}>Late</Text>
+          </View>
+        </View>
+      )}
 
-          {/* Student List */}
-          <ScrollView 
-            style={styles.scrollView}
-            contentContainerStyle={styles.scrollContent}
-            showsVerticalScrollIndicator={false}
-          >
-            {students.map((student) => (
-              <View key={student.id} style={styles.studentCard}>
-                <View style={styles.studentLeft}>
-                  <View style={styles.studentAvatar}>
-                    <Text style={styles.avatarEmoji}>{student.avatar}</Text>
-                    {student.attendance === 'absent' && (
-                      <View style={styles.absentIndicator}>
-                        <View style={styles.absentDot} />
-                      </View>
-                    )}
-                  </View>
-                  <View style={styles.studentInfo}>
-                    <Text style={styles.studentName}>{student.name}</Text>
-                    <Text style={styles.studentRoll}>Roll no. {student.rollNo}</Text>
-                    {student.attendance === 'absent' && (
-                      <Text style={styles.absentLabel}>● Absent</Text>
-                    )}
-                  </View>
-                </View>
+      {/* No class warning */}
+      {!assignedClass && (
+        <View style={styles.warningCard}>
+          <Ionicons name="alert-circle" size={24} color={COLORS.warning} />
+          <Text style={styles.warningText}>You haven't been assigned a class. Contact admin.</Text>
+        </View>
+      )}
 
-                <View style={styles.attendanceButtons}>
-                  <TouchableOpacity 
-                    style={[
-                      styles.attendanceBtn,
-                      student.attendance === 'present' && { backgroundColor: getAttendanceBg('present') }
-                    ]}
-                    onPress={() => markAttendance(student.id, 'present')}
-                    activeOpacity={0.7}
-                  >
-                    <Text style={[
-                      styles.attendanceBtnText,
-                      student.attendance === 'present' && { color: getAttendanceColor('present'), fontWeight: '700' }
-                    ]}>
-                      P
-                    </Text>
-                  </TouchableOpacity>
-
-                  <TouchableOpacity 
-                    style={[
-                      styles.attendanceBtn,
-                      student.attendance === 'absent' && { backgroundColor: getAttendanceBg('absent') }
-                    ]}
-                    onPress={() => markAttendance(student.id, 'absent')}
-                    activeOpacity={0.7}
-                  >
-                    <Text style={[
-                      styles.attendanceBtnText,
-                      student.attendance === 'absent' && { color: getAttendanceColor('absent'), fontWeight: '700' }
-                    ]}>
-                      A
-                    </Text>
-                  </TouchableOpacity>
-
-                  <TouchableOpacity 
-                    style={[
-                      styles.attendanceBtn,
-                      student.attendance === 'late' && { backgroundColor: getAttendanceBg('late') }
-                    ]}
-                    onPress={() => markAttendance(student.id, 'late')}
-                    activeOpacity={0.7}
-                  >
-                    <Text style={[
-                      styles.attendanceBtnText,
-                      student.attendance === 'late' && { color: getAttendanceColor('late'), fontWeight: '700' }
-                    ]}>
-                      L
-                    </Text>
-                  </TouchableOpacity>
-                </View>
+      {/* Student list */}
+      <ScrollView
+        style={styles.scrollView}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); loadData(); }} tintColor={COLORS.primary} />}
+      >
+        {students.length === 0 && assignedClass ? (
+          <View style={styles.emptyCard}>
+            <Text style={styles.emptyEmoji}>🏫</Text>
+            <Text style={styles.emptyTitle}>No students in {assignedClass}</Text>
+            <Text style={styles.emptyText}>Ask admin to upload student data.</Text>
+          </View>
+        ) : (
+          students.map((student, index) => (
+            <View key={student.id} style={[styles.studentCard, alreadySaved && styles.studentCardSaved]}>
+              <View style={[styles.avatar, { backgroundColor: AVATAR_COLORS[index % AVATAR_COLORS.length] }]}>
+                <Text style={styles.avatarText}>{getInitials(student.full_name)}</Text>
               </View>
-            ))}
 
-            <View style={{ height: 100 }} />
-          </ScrollView>
-
-          {/* Save Button */}
-          <View style={styles.saveContainer}>
-            <TouchableOpacity style={styles.saveButton} activeOpacity={0.9}>
-              <Text style={styles.saveButtonText}>Save Attendance</Text>
-              <View style={styles.saveBadge}>
-                <Text style={styles.saveBadgeText}>{markedCount}/{students.length} marked</Text>
+              <View style={styles.studentInfo}>
+                <Text style={styles.studentName}>{student.full_name}</Text>
+                <Text style={styles.studentRoll}>{student.roll_number ?? 'No roll no.'}</Text>
               </View>
-            </TouchableOpacity>
-          </View>
-        </>
-      ) : (
-        <>
-          {/* Monthly View */}
-          {/* Month Selector */}
-          <View style={styles.dateSelector}>
-            <TouchableOpacity style={styles.dateArrow} activeOpacity={0.7}>
-              <Ionicons name="chevron-back" size={20} color={COLORS.textPrimary} />
-            </TouchableOpacity>
-            <View style={styles.monthInfo}>
-              <Text style={styles.dateText}>{selectedMonth}</Text>
-              <Text style={styles.workingDaysText}>{workingDays} working days</Text>
-            </View>
-            <TouchableOpacity style={styles.dateArrow} activeOpacity={0.7}>
-              <Ionicons name="chevron-forward" size={20} color={COLORS.textPrimary} />
-            </TouchableOpacity>
-          </View>
 
-          {/* Group Filter */}
-          <View style={styles.groupFilter}>
-            <TouchableOpacity 
-              style={[styles.groupButton, selectedGroup === 'all' && styles.groupButtonActive]}
-              onPress={() => setSelectedGroup('all')}
-              activeOpacity={0.8}
-            >
-              <Text style={[styles.groupText, selectedGroup === 'all' && styles.groupTextActive]}>
-                All Students
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity 
-              style={[styles.groupButton, selectedGroup === 'playgroup' && styles.groupButtonActive]}
-              onPress={() => setSelectedGroup('playgroup')}
-              activeOpacity={0.8}
-            >
-              <Text style={[styles.groupText, selectedGroup === 'playgroup' && styles.groupTextActive]}>
-                Play Group
-              </Text>
-            </TouchableOpacity>
-          </View>
-
-          {/* Attendance Grid */}
-          <ScrollView 
-            style={styles.scrollView}
-            contentContainerStyle={styles.gridScrollContent}
-            showsVerticalScrollIndicator={false}
-          >
-            <View style={styles.gridCard}>
-              {/* Grid Header */}
-              <View style={styles.gridHeader}>
-                <Text style={styles.gridHeaderLabel}>STUDENT</Text>
-                {dayHeaders.map((day) => (
-                  <View key={day.date} style={styles.dayColumn}>
-                    <Text style={[styles.dayLabel, day.isToday && styles.dayLabelToday]}>
-                      {day.day}
+              <View style={styles.attendanceButtons}>
+                {(['present', 'absent', 'late'] as AttendanceStatus[]).map((status) => (
+                  <TouchableOpacity
+                    key={status}
+                    style={[
+                      styles.attendanceBtn,
+                      student.attendance === status && {
+                        backgroundColor:
+                          status === 'present' ? COLORS.successLight :
+                          status === 'absent' ? COLORS.errorLight : COLORS.warningLight,
+                      },
+                    ]}
+                    onPress={() => markAttendance(student.id, status)}
+                    activeOpacity={alreadySaved ? 1 : 0.7}
+                    disabled={alreadySaved}
+                  >
+                    <Text style={[
+                      styles.attendanceBtnText,
+                      student.attendance === status && {
+                        color:
+                          status === 'present' ? COLORS.success :
+                          status === 'absent' ? COLORS.error : COLORS.warning,
+                        fontWeight: '800',
+                      },
+                    ]}>
+                      {status === 'present' ? 'P' : status === 'absent' ? 'A' : 'L'}
                     </Text>
-                    <Text style={[styles.dateLabel, day.isToday && styles.dateLabelToday]}>
-                      {day.date.toString().padStart(2, '0')}
-                    </Text>
-                  </View>
+                  </TouchableOpacity>
                 ))}
-                <Text style={styles.percentLabel}>%</Text>
-              </View>
-
-              {/* Student Rows */}
-              {students.map((student) => (
-                <View key={student.id} style={styles.gridRow}>
-                  <View style={styles.gridStudentInfo}>
-                    <View style={styles.gridAvatar}>
-                      <Text style={styles.gridAvatarEmoji}>{student.avatar}</Text>
-                    </View>
-                    <Text style={styles.gridStudentName}>{student.name}</Text>
-                  </View>
-
-                  {dayHeaders.map((day) => {
-                    const dayAttendance = student.monthlyAttendance?.find(a => a.date === day.date);
-                    return (
-                      <View key={day.date} style={styles.dayColumn}>
-                        <View style={[
-                          styles.statusDot,
-                          { backgroundColor: getMonthlyStatusColor(dayAttendance?.status || 'absent') }
-                        ]} />
-                      </View>
-                    );
-                  })}
-
-                  <View style={styles.percentColumn}>
-                    <View style={[
-                      styles.percentBadge,
-                      { backgroundColor: getPercentageColor(student.attendancePercentage || 0) }
-                    ]}>
-                      <Text style={styles.percentText}>{student.attendancePercentage}%</Text>
-                    </View>
-                  </View>
-                </View>
-              ))}
-
-              {/* Summary Row */}
-              <View style={styles.summaryRow}>
-                <Text style={styles.summaryLabel}>PRESENT</Text>
-                {dayHeaders.map((day) => (
-                  <View key={day.date} style={styles.dayColumn}>
-                    <Text style={[styles.summaryValue, day.isToday && styles.summaryValueToday]}>
-                      {getPresentCountForDay(day.date)}
-                    </Text>
-                  </View>
-                ))}
-                <View style={styles.percentColumn}>
-                  <Text style={styles.summaryTotal}>5</Text>
-                </View>
               </View>
             </View>
+          ))
+        )}
+        <View style={{ height: 120 }} />
+      </ScrollView>
 
-            {/* Legend */}
-            <View style={styles.legend}>
-              <View style={styles.legendItem}>
-                <View style={[styles.legendDot, { backgroundColor: COLORS.success }]} />
-                <Text style={styles.legendText}>Present</Text>
-              </View>
-              <View style={styles.legendItem}>
-                <View style={[styles.legendDot, { backgroundColor: COLORS.error }]} />
-                <Text style={styles.legendText}>Absent</Text>
-              </View>
-              <View style={styles.legendItem}>
-                <View style={[styles.legendDot, { backgroundColor: '#60A5FA' }]} />
-                <Text style={styles.legendText}>Holiday</Text>
-              </View>
+      {/* Save button */}
+      {students.length > 0 && !alreadySaved && (
+        <View style={styles.saveContainer}>
+          <TouchableOpacity
+            style={[styles.saveButton, saving && { opacity: 0.7 }]}
+            onPress={saveAttendance}
+            disabled={saving}
+            activeOpacity={0.9}
+          >
+            {saving ? (
+              <ActivityIndicator color={COLORS.white} size="small" />
+            ) : (
+              <Ionicons name="save" size={20} color={COLORS.white} />
+            )}
+            <Text style={styles.saveButtonText}>
+              {saving ? 'Saving...' : 'Save Attendance'}
+            </Text>
+            <View style={styles.saveBadge}>
+              <Text style={styles.saveBadgeText}>{markedCount}/{students.length}</Text>
             </View>
+          </TouchableOpacity>
+        </View>
+      )}
 
-            <View style={{ height: 40 }} />
-          </ScrollView>
-        </>
+      {alreadySaved && (
+        <View style={styles.saveContainer}>
+          <View style={styles.savedBar}>
+            <Ionicons name="checkmark-circle" size={20} color={COLORS.success} />
+            <Text style={styles.savedBarText}>Today's attendance already saved</Text>
+          </View>
+        </View>
       )}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: COLORS.background,
-  },
+  container: { flex: 1, backgroundColor: COLORS.background },
+  centered: { justifyContent: 'center', alignItems: 'center', gap: 12 },
+  loadingText: { fontSize: 14, color: COLORS.textSecondary, fontWeight: '600' },
+
   header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingTop: 60,
-    paddingBottom: 16,
-    backgroundColor: COLORS.background,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingHorizontal: 16, paddingTop: 60, paddingBottom: 16, backgroundColor: COLORS.background,
   },
   backButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
-    backgroundColor: COLORS.white,
-    justifyContent: 'center',
-    alignItems: 'center',
+    width: 40, height: 40, borderRadius: 12, backgroundColor: COLORS.white,
+    justifyContent: 'center', alignItems: 'center',
   },
-  headerCenter: {
-    flex: 1,
-    alignItems: 'center',
-  },
-  headerTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: COLORS.textPrimary,
-  },
+  headerCenter: { flex: 1, alignItems: 'center' },
+  headerTitle: { fontSize: 18, fontWeight: '700', color: COLORS.textPrimary },
   markAllButton: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 8,
-    backgroundColor: COLORS.successLight,
+    paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8, backgroundColor: COLORS.successLight,
   },
-  markAllText: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: COLORS.success,
-  },
+  markAllText: { fontSize: 13, fontWeight: '700', color: COLORS.success },
 
-  // Toggle
-  toggleContainer: {
-    flexDirection: 'row',
-    marginHorizontal: 20,
-    marginBottom: 16,
-    backgroundColor: COLORS.white,
-    borderRadius: 50,
-    padding: 4,
-    shadowColor: COLORS.primary,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
-    elevation: 2,
+  dateBar: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    marginHorizontal: 20, marginBottom: 14,
   },
-  toggleButton: {
-    flex: 1,
-    paddingVertical: 10,
-    borderRadius: 50,
-    alignItems: 'center',
+  dateText: { fontSize: 14, fontWeight: '600', color: COLORS.textSecondary, flex: 1 },
+  savedBadge: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    backgroundColor: COLORS.successLight, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12,
   },
-  toggleButtonActive: {
-    backgroundColor: COLORS.primary,
-  },
-  toggleText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: COLORS.textSecondary,
-  },
-  toggleTextActive: {
-    color: COLORS.white,
-    fontWeight: '700',
-  },
+  savedBadgeText: { fontSize: 12, fontWeight: '700', color: COLORS.success },
 
-  // Date Selector
-  dateSelector: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginHorizontal: 20,
-    marginBottom: 16,
-    backgroundColor: COLORS.white,
-    borderRadius: 16,
-    padding: 16,
-    shadowColor: COLORS.primary,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
-    elevation: 2,
-  },
-  dateArrow: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
-    backgroundColor: COLORS.background,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  dateText: {
-    fontSize: 17,
-    fontWeight: '700',
-    color: COLORS.textPrimary,
-    textAlign: 'center',
-  },
-
-  // Stats Card
   statsCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginHorizontal: 20,
-    marginBottom: 16,
-    backgroundColor: COLORS.white,
-    borderRadius: 16,
-    padding: 16,
-    shadowColor: COLORS.primary,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
-    elevation: 2,
+    flexDirection: 'row', alignItems: 'center', marginHorizontal: 20, marginBottom: 16,
+    backgroundColor: COLORS.white, borderRadius: 16, padding: 16,
+    shadowColor: COLORS.primary, shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06, shadowRadius: 8, elevation: 2,
   },
-  statItem: {
-    flex: 1,
-  },
-  statLabel: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: COLORS.textPrimary,
-  },
-  statDivider: {
-    width: 1,
-    height: 24,
-    backgroundColor: COLORS.lightGray,
-    marginHorizontal: 12,
-  },
-  statBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    marginLeft: 8,
-  },
-  statDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-  },
-  statValue: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: COLORS.textPrimary,
-  },
+  statItem: { flex: 1, alignItems: 'center', gap: 2 },
+  statNumber: { fontSize: 22, fontWeight: '800', color: COLORS.textPrimary },
+  statLabel: { fontSize: 11, fontWeight: '600', color: COLORS.textSecondary },
+  statDivider: { width: 1, height: 30, backgroundColor: COLORS.lightGray },
 
-  // Student List
-  scrollView: {
-    flex: 1,
+  warningCard: {
+    flexDirection: 'row', alignItems: 'center', gap: 12, margin: 20,
+    backgroundColor: COLORS.warningLight, borderRadius: 16, padding: 16,
   },
-  scrollContent: {
-    paddingHorizontal: 20,
-    gap: 12,
+  warningText: { flex: 1, fontSize: 14, color: COLORS.warning, fontWeight: '600' },
+
+  scrollView: { flex: 1 },
+  scrollContent: { paddingHorizontal: 20, gap: 10 },
+
+  emptyCard: {
+    backgroundColor: COLORS.white, borderRadius: 20, padding: 32, alignItems: 'center', gap: 8,
+    shadowColor: COLORS.primary, shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06, shadowRadius: 8, elevation: 2,
   },
+  emptyEmoji: { fontSize: 40 },
+  emptyTitle: { fontSize: 16, fontWeight: '700', color: COLORS.textPrimary },
+  emptyText: { fontSize: 13, color: COLORS.textSecondary, textAlign: 'center' },
+
   studentCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: COLORS.white,
-    borderRadius: 16,
-    padding: 16,
-    shadowColor: COLORS.primary,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
-    elevation: 2,
+    flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.white,
+    borderRadius: 16, padding: 14, gap: 12,
+    shadowColor: COLORS.primary, shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06, shadowRadius: 8, elevation: 2,
   },
-  studentLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    flex: 1,
-  },
-  studentAvatar: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: COLORS.primarySoft,
-    justifyContent: 'center',
-    alignItems: 'center',
-    position: 'relative',
-  },
-  avatarEmoji: {
-    fontSize: 24,
-  },
-  absentIndicator: {
-    position: 'absolute',
-    bottom: 0,
-    right: 0,
-    width: 16,
-    height: 16,
-    borderRadius: 8,
-    backgroundColor: COLORS.white,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  absentDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: COLORS.error,
-  },
-  studentInfo: {
-    flex: 1,
-    gap: 2,
-  },
-  studentName: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: COLORS.textPrimary,
-  },
-  studentRoll: {
-    fontSize: 12,
-    fontWeight: '500',
-    color: COLORS.textLight,
-  },
-  absentLabel: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: COLORS.error,
-  },
+  studentCardSaved: { opacity: 0.85 },
+  avatar: { width: 46, height: 46, borderRadius: 23, justifyContent: 'center', alignItems: 'center' },
+  avatarText: { fontSize: 15, fontWeight: '800', color: COLORS.primary },
+  studentInfo: { flex: 1, gap: 2 },
+  studentName: { fontSize: 15, fontWeight: '700', color: COLORS.textPrimary },
+  studentRoll: { fontSize: 12, fontWeight: '500', color: COLORS.textSecondary },
 
-  // Attendance Buttons
-  attendanceButtons: {
-    flexDirection: 'row',
-    gap: 8,
-  },
+  attendanceButtons: { flexDirection: 'row', gap: 6 },
   attendanceBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
-    backgroundColor: COLORS.lightGray,
-    justifyContent: 'center',
-    alignItems: 'center',
+    width: 36, height: 36, borderRadius: 10, backgroundColor: COLORS.lightGray,
+    justifyContent: 'center', alignItems: 'center',
   },
-  attendanceBtnText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: COLORS.textSecondary,
-  },
+  attendanceBtnText: { fontSize: 13, fontWeight: '600', color: COLORS.textSecondary },
 
-  // Save Button
   saveContainer: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    padding: 20,
-    backgroundColor: COLORS.background,
+    position: 'absolute', bottom: 0, left: 0, right: 0,
+    padding: 20, backgroundColor: COLORS.background,
   },
   saveButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: COLORS.primary,
-    borderRadius: 50,
-    padding: 18,
-    gap: 12,
-    shadowColor: COLORS.primary,
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.3,
-    shadowRadius: 12,
-    elevation: 6,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    backgroundColor: COLORS.primary, borderRadius: 50, padding: 18, gap: 10,
+    shadowColor: COLORS.primary, shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.3, shadowRadius: 12, elevation: 6,
   },
-  saveButtonText: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: COLORS.white,
-  },
+  saveButtonText: { fontSize: 16, fontWeight: '700', color: COLORS.white },
   saveBadge: {
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 12,
+    backgroundColor: 'rgba(255,255,255,0.2)', paddingHorizontal: 10,
+    paddingVertical: 4, borderRadius: 12,
   },
-  saveBadgeText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: COLORS.white,
-  },
+  saveBadgeText: { fontSize: 12, fontWeight: '700', color: COLORS.white },
 
-  // Monthly Grid Styles
-  monthInfo: {
-    alignItems: 'center',
-    gap: 4,
+  savedBar: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: 8, backgroundColor: COLORS.successLight, borderRadius: 50, padding: 16,
   },
-  workingDaysText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: COLORS.textLight,
-  },
-  groupFilter: {
-    flexDirection: 'row',
-    marginHorizontal: 20,
-    marginBottom: 16,
-    gap: 8,
-  },
-  groupButton: {
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 50,
-    backgroundColor: COLORS.white,
-    shadowColor: COLORS.primary,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
-    elevation: 2,
-  },
-  groupButtonActive: {
-    backgroundColor: COLORS.primary,
-  },
-  groupText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: COLORS.textSecondary,
-  },
-  groupTextActive: {
-    color: COLORS.white,
-    fontWeight: '700',
-  },
-  gridScrollContent: {
-    paddingHorizontal: 20,
-    paddingBottom: 20,
-  },
-  gridCard: {
-    backgroundColor: COLORS.white,
-    borderRadius: 20,
-    padding: 16,
-    shadowColor: COLORS.primary,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.08,
-    shadowRadius: 12,
-    elevation: 3,
-  },
-  gridHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingBottom: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.lightGray,
-    marginBottom: 12,
-  },
-  gridHeaderLabel: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: COLORS.textLight,
-    letterSpacing: 0.5,
-    width: 100,
-  },
-  dayColumn: {
-    width: 50,
-    alignItems: 'center',
-  },
-  dayLabel: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: COLORS.textSecondary,
-    marginBottom: 2,
-  },
-  dayLabelToday: {
-    color: COLORS.primary,
-    fontWeight: '700',
-  },
-  dateLabel: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: COLORS.textPrimary,
-  },
-  dateLabelToday: {
-    color: COLORS.primary,
-  },
-  percentLabel: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: COLORS.textLight,
-    letterSpacing: 0.5,
-    width: 50,
-    textAlign: 'center',
-  },
-  gridRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.lightGray,
-  },
-  gridStudentInfo: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    width: 100,
-    gap: 8,
-  },
-  gridAvatar: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: COLORS.primarySoft,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  gridAvatarEmoji: {
-    fontSize: 16,
-  },
-  gridStudentName: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: COLORS.textPrimary,
-    flex: 1,
-  },
-  statusDot: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-  },
-  percentColumn: {
-    width: 50,
-    alignItems: 'center',
-  },
-  percentBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 8,
-  },
-  percentText: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: COLORS.white,
-  },
-  summaryRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingTop: 12,
-    marginTop: 8,
-    borderTopWidth: 2,
-    borderTopColor: COLORS.lightGray,
-  },
-  summaryLabel: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: COLORS.textSecondary,
-    letterSpacing: 0.5,
-    width: 100,
-  },
-  summaryValue: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: COLORS.textPrimary,
-  },
-  summaryValueToday: {
-    color: COLORS.primary,
-  },
-  summaryTotal: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: COLORS.textPrimary,
-  },
-  legend: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'center',
-    gap: 16,
-    marginTop: 20,
-    paddingHorizontal: 20,
-  },
-  legendItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  legendDot: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-  },
-  legendText: {
-    fontSize: 12,
-    fontWeight: '500',
-    color: COLORS.textSecondary,
-  },
+  savedBarText: { fontSize: 15, fontWeight: '700', color: COLORS.success },
 });

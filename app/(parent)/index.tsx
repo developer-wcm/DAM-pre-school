@@ -19,6 +19,7 @@ import { supabase } from '../../lib/supabase';
 interface ChildStats {
   presentDays: number;
   totalDays: number;
+  lateCount: number;
   outstandingFees: number;
   nextDueDate: string | null;
   latestProgress: string | null;
@@ -41,14 +42,9 @@ function useChildStats(childId: string | undefined) {
     const monthEnd   = new Date(today.getFullYear(), today.getMonth() + 1, 0).toISOString().split('T')[0];
 
     Promise.all([
+      // Fetch all attendance rows for this month (with status)
       supabase.from('attendance')
-        .select('status', { count: 'exact' })
-        .eq('student_id', childId)
-        .eq('status', 'present')
-        .gte('date', monthStart).lte('date', monthEnd),
-
-      supabase.from('attendance')
-        .select('id', { count: 'exact' })
+        .select('status')
         .eq('student_id', childId)
         .gte('date', monthStart).lte('date', monthEnd),
 
@@ -64,12 +60,26 @@ function useChildStats(childId: string | undefined) {
         .eq('student_id', childId)
         .order('created_at', { ascending: false })
         .limit(1),
-    ]).then(([presentRes, totalRes, feesRes, progressRes]) => {
+    ]).then(([attendanceRes, feesRes, progressRes]) => {
+      // Apply 4 late = 1 absent rule
+      const rows = attendanceRes.data ?? [];
+      const presentCount = rows.filter((r: any) => r.status === 'present').length;
+      const absentCount  = rows.filter((r: any) => r.status === 'absent').length;
+      const lateCount    = rows.filter((r: any) => r.status === 'late').length;
+      const totalDays    = rows.length;
+
+      // effectivePresent = present + late (late still counts as attended, penalty applied to %)
+      // effectiveAbsent  = absent + floor(late/4) — every 4 lates = 1 absent penalty
+      const lateAbsentPenalty = Math.floor(lateCount / 4);
+      const effectiveAbsent   = absentCount + lateAbsentPenalty;
+      const effectivePresent  = totalDays - effectiveAbsent;
+
       const outstanding = (feesRes.data ?? []).reduce((s: number, f: any) => s + Number(f.amount), 0);
       const prog = progressRes.data?.[0];
       setStats({
-        presentDays:         presentRes.count ?? 0,
-        totalDays:           totalRes.count ?? 0,
+        presentDays:         Math.max(0, effectivePresent),
+        totalDays,
+        lateCount,
         outstandingFees:     outstanding,
         nextDueDate:         feesRes.data?.[0]?.due_date ?? null,
         latestProgress:      prog?.title ?? null,
@@ -272,6 +282,14 @@ export default function ParentChildScreen() {
                     {stats?.presentDays ?? 0} / {stats?.totalDays ?? 0}
                   </Text>
                   <Text style={styles.cardSub}>Days present • {monthLabel}</Text>
+                  {(stats?.lateCount ?? 0) > 0 && (
+                    <Text style={styles.lateNote}>
+                      ⏰ {stats?.lateCount} late
+                      {(stats?.lateCount ?? 0) >= 4
+                        ? ` • ${Math.floor((stats?.lateCount ?? 0) / 4)} absent penalty`
+                        : ` • ${4 - ((stats?.lateCount ?? 0) % 4)} more = 1 absent`}
+                    </Text>
+                  )}
                 </View>
                 <AttendanceRing
                   present={stats?.presentDays ?? 0}
@@ -494,6 +512,7 @@ const styles = StyleSheet.create({
   cardTop: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   cardLabel: { fontSize: 11, fontWeight: '700', color: '#9A9AB0', letterSpacing: 1, flex: 1 },
   cardSub: { fontSize: 12, color: '#9A9AB0' },
+  lateNote: { fontSize: 11, color: '#E8A020', fontWeight: '600' },
   greenDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#2A9D6E' },
 
   attendanceRow: {
