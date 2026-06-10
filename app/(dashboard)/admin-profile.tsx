@@ -27,6 +27,16 @@ function getInitials(name: string | null) {
   return name.split(' ').map((n) => n[0]).join('').toUpperCase().slice(0, 2);
 }
 
+function getRoleLabel(role: string | null | undefined) {
+  if (role === 'principal') return 'Principal';
+  return 'Administrator';
+}
+
+function getRoleShort(role: string | null | undefined) {
+  if (role === 'principal') return 'Principal';
+  return 'Admin';
+}
+
 function formatJoined(dateStr: string | null) {
   if (!dateStr) return '—';
   return new Date(dateStr).toLocaleDateString('en-IN', {
@@ -99,10 +109,10 @@ export default function AdminProfileScreen() {
 
         {/* Header */}
         <LinearGradient colors={['#1E3A5F', '#2C5282', '#1E3A5F']} style={styles.headerGradient}>
-          <TouchableOpacity style={styles.backBtn} onPress={() => router.navigate('/(dashboard)/')} activeOpacity={0.7}>
+          <TouchableOpacity style={styles.backBtn} onPress={() => router.back()} activeOpacity={0.7}>
             <Ionicons name="arrow-back" size={22} color="#FFFFFF" />
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>Admin Profile</Text>
+          <Text style={styles.headerTitle}>{getRoleShort(profile?.role)} Profile</Text>
           <View style={{ width: 40 }} />
         </LinearGradient>
 
@@ -112,10 +122,10 @@ export default function AdminProfileScreen() {
             <Text style={styles.avatarText}>{initials}</Text>
           </LinearGradient>
           <View style={styles.goldRing} />
-          <Text style={styles.adminName}>{profile?.full_name ?? 'Admin'}</Text>
+          <Text style={styles.adminName}>{profile?.full_name ?? getRoleShort(profile?.role)}</Text>
           <View style={styles.roleBadge}>
             <Ionicons name="shield-checkmark" size={13} color="#DAA520" />
-            <Text style={styles.roleText}>Administrator</Text>
+            <Text style={styles.roleText}>{getRoleLabel(profile?.role)}</Text>
           </View>
           <Text style={styles.schoolName}>{DEFAULT_SCHOOL_NAME}</Text>
         </View>
@@ -126,7 +136,7 @@ export default function AdminProfileScreen() {
           <InfoRow icon="mail-outline" label="Email" value={user?.email ?? '—'} />
           <InfoRow icon="business-outline" label="School ID" value={schoolId || '—'} />
           <InfoRow icon="calendar-outline" label="Member Since" value={formatJoined(user?.created_at ?? null)} />
-          <InfoRow icon="shield-outline" label="Role" value="Admin" last />
+          <InfoRow icon="shield-outline" label="Role" value={getRoleLabel(profile?.role)} last />
         </View>
 
         {/* Stats Grid */}

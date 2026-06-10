@@ -22,9 +22,33 @@ interface ChildStats {
   lateCount: number;
   outstandingFees: number;
   nextDueDate: string | null;
-  latestProgress: string | null;
-  latestRating: number;
-  latestProgressLabel: string | null;
+  progressTerm: string | null;
+  progressRating: number;       // 1-5 stars derived from avg skill level
+  progressNotes: string | null;
+  recentActivity: { label: string; time: string; icon: string; color: string; bg: string }[];
+}
+
+// ─── Skill level → score ──────────────────────────────────────────────────────
+function skillsToRating(skillsJson: any): number {
+  try {
+    const skills = typeof skillsJson === 'string' ? JSON.parse(skillsJson) : skillsJson;
+    if (!Array.isArray(skills) || skills.length === 0) return 0;
+    const levelMap: Record<string, number> = {
+      beginning: 1, developing: 2, meeting: 3, exceeding: 4,
+    };
+    const total = skills.reduce((sum: number, s: any) => {
+      return sum + (levelMap[s.level?.toLowerCase?.()] ?? 0);
+    }, 0);
+    const avg = total / skills.length; // 0–4
+    return Math.round((avg / 4) * 5);  // convert to 1–5 stars
+  } catch {
+    return 0;
+  }
+}
+
+function termLabel(term: string) {
+  const map: Record<string, string> = { term1: 'Term 1', term2: 'Term 2', term3: 'Term 3' };
+  return map[term] ?? term;
 }
 
 // ─── Stats hook ───────────────────────────────────────────────────────────────
@@ -37,54 +61,117 @@ function useChildStats(childId: string | undefined) {
     if (!childId) { setStats(null); return; }
     setLoading(true);
 
-    const today     = new Date();
+    const today      = new Date();
     const monthStart = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().split('T')[0];
     const monthEnd   = new Date(today.getFullYear(), today.getMonth() + 1, 0).toISOString().split('T')[0];
 
     Promise.all([
-      // Fetch all attendance rows for this month (with status)
+      // 1. Attendance this month
       supabase.from('attendance')
-        .select('status')
+        .select('status, date')
         .eq('student_id', childId)
         .gte('date', monthStart).lte('date', monthEnd),
 
+      // 2. Outstanding fees
       supabase.from('fees')
         .select('amount, due_date')
         .eq('student_id', childId)
         .eq('paid', false)
-        .order('due_date', { ascending: true })
+        .order('due_date', { ascending: true }),
+
+      // 3. Latest progress (skills JSON + term + notes)
+      supabase.from('student_progress')
+        .select('term, skills, observation_notes, updated_at')
+        .eq('student_id', childId)
+        .order('updated_at', { ascending: false })
         .limit(1),
 
-      supabase.from('student_progress')
-        .select('title, rating, label')
+      // 4. Recent remarks
+      supabase.from('student_remarks')
+        .select('message, created_at, sender_role')
         .eq('student_id', childId)
         .order('created_at', { ascending: false })
-        .limit(1),
-    ]).then(([attendanceRes, feesRes, progressRes]) => {
-      // Apply 4 late = 1 absent rule
-      const rows = attendanceRes.data ?? [];
+        .limit(3),
+    ]).then(([attendanceRes, feesRes, progressRes, remarksRes]) => {
+
+      // ── Attendance ──────────────────────────────────────────────────────────
+      const rows       = attendanceRes.data ?? [];
       const presentCount = rows.filter((r: any) => r.status === 'present').length;
       const absentCount  = rows.filter((r: any) => r.status === 'absent').length;
       const lateCount    = rows.filter((r: any) => r.status === 'late').length;
       const totalDays    = rows.length;
-
-      // effectivePresent = present + late (late still counts as attended, penalty applied to %)
-      // effectiveAbsent  = absent + floor(late/4) — every 4 lates = 1 absent penalty
       const lateAbsentPenalty = Math.floor(lateCount / 4);
       const effectiveAbsent   = absentCount + lateAbsentPenalty;
-      const effectivePresent  = totalDays - effectiveAbsent;
+      const effectivePresent  = Math.max(0, totalDays - effectiveAbsent);
 
+      // ── Fees ────────────────────────────────────────────────────────────────
       const outstanding = (feesRes.data ?? []).reduce((s: number, f: any) => s + Number(f.amount), 0);
+
+      // ── Progress ────────────────────────────────────────────────────────────
       const prog = progressRes.data?.[0];
+      const progressRating = prog ? skillsToRating(prog.skills) : 0;
+
+      // ── Recent Activity (real data) ─────────────────────────────────────────
+      const activity: ChildStats['recentActivity'] = [];
+
+      // Latest attendance
+      const lastAttRow = rows.sort((a: any, b: any) =>
+        new Date(b.date).getTime() - new Date(a.date).getTime())[0];
+      if (lastAttRow) {
+        const statusLabel = lastAttRow.status === 'present' ? 'Marked present'
+          : lastAttRow.status === 'absent' ? 'Marked absent' : 'Marked late';
+        const isToday = lastAttRow.date === today.toISOString().split('T')[0];
+        activity.push({
+          label: statusLabel,
+          time: isToday ? 'Today' : new Date(lastAttRow.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }),
+          icon: lastAttRow.status === 'present' ? 'checkmark-circle-outline' : lastAttRow.status === 'absent' ? 'close-circle-outline' : 'time-outline',
+          color: lastAttRow.status === 'present' ? '#2A9D6E' : lastAttRow.status === 'absent' ? '#E05A5A' : '#E8A020',
+          bg: lastAttRow.status === 'present' ? '#D4F4E8' : lastAttRow.status === 'absent' ? '#FFE4E4' : '#FFF0D4',
+        });
+      }
+
+      // Fee status
+      activity.push({
+        label: outstanding > 0 ? `₹${outstanding.toLocaleString('en-IN')} fee pending` : 'All fees paid',
+        time: 'This month',
+        icon: 'card-outline',
+        color: outstanding > 0 ? '#E8A020' : '#2A9D6E',
+        bg: outstanding > 0 ? '#FFF0D4' : '#D4F4E8',
+      });
+
+      // Latest remark
+      const lastRemark = (remarksRes.data ?? [])[0];
+      if (lastRemark) {
+        activity.push({
+          label: `New remark from ${lastRemark.sender_role === 'teacher' ? 'teacher' : 'school'}`,
+          time: new Date(lastRemark.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }),
+          icon: 'chatbubble-outline',
+          color: '#7B6FE8',
+          bg: '#E8E4F8',
+        });
+      }
+
+      // Progress updated
+      if (prog) {
+        activity.push({
+          label: `Progress updated • ${termLabel(prog.term)}`,
+          time: new Date(prog.updated_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }),
+          icon: 'ribbon-outline',
+          color: '#E8A020',
+          bg: '#FFF8D4',
+        });
+      }
+
       setStats({
-        presentDays:         Math.max(0, effectivePresent),
+        presentDays: effectivePresent,
         totalDays,
         lateCount,
-        outstandingFees:     outstanding,
-        nextDueDate:         feesRes.data?.[0]?.due_date ?? null,
-        latestProgress:      prog?.title ?? null,
-        latestRating:        prog?.rating ?? 0,
-        latestProgressLabel: prog?.label ?? null,
+        outstandingFees: outstanding,
+        nextDueDate: feesRes.data?.[0]?.due_date ?? null,
+        progressTerm: prog ? termLabel(prog.term) : null,
+        progressRating,
+        progressNotes: prog?.observation_notes ?? null,
+        recentActivity: activity,
       });
       setLoading(false);
     });
@@ -337,25 +424,23 @@ export default function ParentChildScreen() {
             </View>
 
             {/* Latest Progress */}
-            {stats?.latestProgress && (
-              <TouchableOpacity style={styles.card} activeOpacity={0.85}>
+            {stats?.progressTerm && (
+              <View style={styles.card}>
                 <View style={styles.rowCard}>
                   <View style={[styles.iconBox, { backgroundColor: '#FFF8D4' }]}>
                     <Ionicons name="ribbon-outline" size={22} color="#E8A020" />
                   </View>
                   <View style={{ flex: 1, gap: 6 }}>
-                    <Text style={styles.cardLabel}>LATEST PROGRESS</Text>
-                    <Text style={styles.progressTitle}>{stats.latestProgress}</Text>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                      <Stars rating={stats.latestRating} />
-                      {stats.latestProgressLabel && (
-                        <Text style={styles.progressLabel}>{stats.latestProgressLabel}</Text>
-                      )}
-                    </View>
+                    <Text style={styles.cardLabel}>LATEST PROGRESS • {stats.progressTerm}</Text>
+                    <Stars rating={stats.progressRating} />
+                    {stats.progressNotes ? (
+                      <Text style={styles.progressLabel} numberOfLines={2}>{stats.progressNotes}</Text>
+                    ) : (
+                      <Text style={styles.progressLabel}>Assessment completed by teacher</Text>
+                    )}
                   </View>
-                  <Ionicons name="chevron-forward" size={18} color="#C4C4D4" />
                 </View>
-              </TouchableOpacity>
+              </View>
             )}
 
             {/* Remarks from School */}
@@ -389,51 +474,28 @@ export default function ParentChildScreen() {
               </>
             )}
 
-            {/* Recent Activity */}
-            <Text style={styles.sectionTitle}>Recent Activity</Text>
-
-            <View style={styles.activityCard}>
-              <View style={styles.activityRow}>
-                <View style={[styles.activityDot, { backgroundColor: '#D4F4E8' }]}>
-                  <Ionicons name="checkmark-circle-outline" size={18} color="#2A9D6E" />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.activityText}>Marked present today</Text>
-                  <Text style={styles.activityTime}>Today</Text>
-                </View>
-              </View>
-
-              <View style={styles.activityDivider} />
-
-              <View style={styles.activityRow}>
-                <View style={[styles.activityDot, { backgroundColor: '#FFF0D4' }]}>
-                  <Ionicons name="card-outline" size={18} color="#E8A020" />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.activityText}>
-                    {feePaid ? 'All fees paid' : 'Fee payment pending'}
-                  </Text>
-                  <Text style={styles.activityTime}>This month</Text>
-                </View>
-              </View>
-
-              {stats?.latestProgress && (
-                <>
-                  <View style={styles.activityDivider} />
-                  <View style={styles.activityRow}>
-                    <View style={[styles.activityDot, { backgroundColor: '#FFF8D4' }]}>
-                      <Ionicons name="ribbon-outline" size={18} color="#E8A020" />
+            {/* Recent Activity — real data */}
+            {(stats?.recentActivity ?? []).length > 0 && (
+              <>
+                <Text style={styles.sectionTitle}>Recent Activity</Text>
+                <View style={styles.activityCard}>
+                  {(stats?.recentActivity ?? []).map((item, i) => (
+                    <View key={i}>
+                      {i > 0 && <View style={styles.activityDivider} />}
+                      <View style={styles.activityRow}>
+                        <View style={[styles.activityDot, { backgroundColor: item.bg }]}>
+                          <Ionicons name={item.icon as any} size={18} color={item.color} />
+                        </View>
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.activityText}>{item.label}</Text>
+                          <Text style={styles.activityTime}>{item.time}</Text>
+                        </View>
+                      </View>
                     </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.activityText}>
-                        Progress updated: {stats.latestProgress}
-                      </Text>
-                      <Text style={styles.activityTime}>Recently</Text>
-                    </View>
-                  </View>
-                </>
-              )}
-            </View>
+                  ))}
+                </View>
+              </>
+            )}
           </>
         )}
 

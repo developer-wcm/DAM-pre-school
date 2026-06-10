@@ -152,6 +152,22 @@ export default function DashboardLayout() {
         name="csv-upload"
         options={{ href: null, tabBarStyle: { display: 'none' } }}
       />
+      <Tabs.Screen
+        name="system-settings"
+        options={{ href: null }}
+      />
+      <Tabs.Screen
+        name="data-export"
+        options={{ href: null }}
+      />
+      <Tabs.Screen
+        name="appointments"
+        options={{ href: null }}
+      />
+      <Tabs.Screen
+        name="data-deletion"
+        options={{ href: null }}
+      />
     </Tabs>
   );
 }

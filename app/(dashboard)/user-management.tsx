@@ -30,6 +30,8 @@ interface UserRecord {
   approved: boolean;
   created_at: string;
   children?: string[];
+  assigned_class?: string | null;
+  assigned_section?: string | null;
 }
 
 const TABS: { id: TabId; label: string; icon: string }[] = [
@@ -75,8 +77,9 @@ export default function UserManagementScreen() {
   const [loading, setLoading]             = useState(true);
   const [refreshing, setRefreshing]       = useState(false);
   const [search, setSearch]               = useState('');
-  const [actionLoading, setActionLoading] = useState<string | null>(null);
-  const [linkTarget, setLinkTarget]       = useState<UserRecord | null>(null);
+  const [actionLoading, setActionLoading]     = useState<string | null>(null);
+  const [linkTarget, setLinkTarget]           = useState<UserRecord | null>(null);
+  const [assignClassTarget, setAssignClassTarget] = useState<UserRecord | null>(null);
 
   const [banner, setBanner] = useState<{ msg: string; success: boolean; isNew?: boolean } | null>(null);
   const slideAnim   = useRef(new Animated.Value(-100)).current;
@@ -125,9 +128,24 @@ export default function UserManagementScreen() {
           childMap[s.parent_id].push(s.full_name);
         });
 
-        setUsers(allProfiles.map((p) =>
-          p.role === 'parent' ? { ...p, children: childMap[p.id] ?? [] } : p
-        ));
+        // Also fetch assigned_class for teachers
+        const teacherIds = allProfiles.filter((p) => p.role === 'teacher').map((p) => p.id);
+        let classMap: Record<string, { assigned_class: string | null; assigned_section: string | null }> = {};
+        if (teacherIds.length > 0) {
+          const { data: teacherProfiles } = await supabase
+            .from('profiles')
+            .select('id, assigned_class, assigned_section')
+            .in('id', teacherIds);
+          (teacherProfiles ?? []).forEach((t: any) => {
+            classMap[t.id] = { assigned_class: t.assigned_class, assigned_section: t.assigned_section };
+          });
+        }
+
+        setUsers(allProfiles.map((p) => {
+          if (p.role === 'parent') return { ...p, children: childMap[p.id] ?? [] };
+          if (p.role === 'teacher') return { ...p, ...classMap[p.id] };
+          return p;
+        }));
       } else {
         setUsers(allProfiles);
       }
@@ -238,6 +256,24 @@ export default function UserManagementScreen() {
         },
       },
     ]);
+  }
+
+  // ── Assign Class ─────────────────────────────────────────────────────────────
+
+  async function handleAssignClass(teacherId: string, teacherName: string | null, className: string, section: string | null) {
+    const { error } = await supabase
+      .from('profiles')
+      .update({ assigned_class: className, assigned_section: section })
+      .eq('id', teacherId);
+    if (error) {
+      showBanner(error.message, false);
+    } else {
+      setUsers((prev) => prev.map((u) =>
+        u.id === teacherId ? { ...u, assigned_class: className, assigned_section: section } : u
+      ));
+      showBanner(`✓ ${teacherName ?? 'Teacher'} assigned to Class ${className}`);
+    }
+    setAssignClassTarget(null);
   }
 
   // ── Link / Unlink child ──────────────────────────────────────────────────────
@@ -383,12 +419,24 @@ export default function UserManagementScreen() {
               onApprove={() => handleApprove(user)}
               onReject={() => handleReject(user)}
               onManageChildren={user.role === 'parent' && user.approved ? () => setLinkTarget(user) : undefined}
+              onAssignClass={user.role === 'teacher' && user.approved ? () => setAssignClassTarget(user) : undefined}
             />
           ))
         )}
 
         <View style={{ height: 100 }} />
       </ScrollView>
+
+      {/* Assign Class Modal */}
+      {assignClassTarget && (
+        <AssignClassModal
+          teacher={assignClassTarget}
+          onClose={() => setAssignClassTarget(null)}
+          onAssign={(className, section) =>
+            handleAssignClass(assignClassTarget.id, assignClassTarget.full_name, className, section)
+          }
+        />
+      )}
 
       {/* Link Child Modal */}
       {linkTarget && (
@@ -427,13 +475,14 @@ export default function UserManagementScreen() {
 // ─── UserCard ─────────────────────────────────────────────────────────────────
 
 function UserCard({
-  user, actionLoading, onApprove, onReject, onManageChildren,
+  user, actionLoading, onApprove, onReject, onManageChildren, onAssignClass,
 }: {
   user: UserRecord;
   actionLoading: string | null;
   onApprove: () => void;
   onReject: () => void;
   onManageChildren?: () => void;
+  onAssignClass?: () => void;
 }) {
   const isActing  = actionLoading === user.id;
   const roleCfg   = getRoleConfig(user.role);
@@ -493,6 +542,20 @@ function UserCard({
         </>
       )}
 
+      {/* Assign class (approved teachers only) */}
+      {user.approved && onAssignClass && (
+        <>
+          <View style={styles.divider} />
+          <TouchableOpacity style={styles.manageChildrenBtn} onPress={onAssignClass} activeOpacity={0.8}>
+            <Ionicons name="school-outline" size={15} color="#1B3A6B" />
+            <Text style={styles.manageChildrenText}>
+              {user.assigned_class ? `Class: ${user.assigned_class}` : 'Assign Class'}
+            </Text>
+            <Ionicons name="chevron-forward" size={15} color="#1B3A6B" />
+          </TouchableOpacity>
+        </>
+      )}
+
       {/* Actions */}
       {!user.approved && (
         <>
@@ -519,6 +582,84 @@ function UserCard({
     </View>
   );
 }
+
+// ─── AssignClassModal ─────────────────────────────────────────────────────────
+
+const SCHOOL_CLASSES = ['PG', 'PKG', 'JKG', 'SKG'];
+
+function AssignClassModal({ teacher, onClose, onAssign }: {
+  teacher: UserRecord;
+  onClose: () => void;
+  onAssign: (className: string, section: string | null) => void;
+}) {
+  const [selectedClass, setSelectedClass] = useState(teacher.assigned_class ?? '');
+
+  return (
+    <Modal visible transparent animationType="fade" onRequestClose={onClose}>
+      <View style={assignStyles.overlay}>
+        <View style={assignStyles.sheet}>
+          {/* Header */}
+          <View style={assignStyles.header}>
+            <View>
+              <Text style={assignStyles.title}>Assign Class</Text>
+              <Text style={assignStyles.subtitle}>{teacher.full_name ?? 'Teacher'}</Text>
+            </View>
+            <TouchableOpacity onPress={onClose} style={assignStyles.closeBtn}>
+              <Ionicons name="close" size={20} color="#4A4A6A" />
+            </TouchableOpacity>
+          </View>
+
+          {/* Class picker */}
+          <Text style={assignStyles.label}>Select Class</Text>
+          <View style={assignStyles.optionRow}>
+            {SCHOOL_CLASSES.map((cls) => (
+              <TouchableOpacity
+                key={cls}
+                style={[assignStyles.optionChip, selectedClass === cls && assignStyles.optionChipActive]}
+                onPress={() => setSelectedClass(cls)}
+                activeOpacity={0.8}
+              >
+                <Text style={[assignStyles.optionText, selectedClass === cls && assignStyles.optionTextActive]}>
+                  {cls}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          {/* Assign button */}
+          <TouchableOpacity
+            style={[assignStyles.assignBtn, !selectedClass && { opacity: 0.5 }]}
+            onPress={() => selectedClass && onAssign(selectedClass, null)}
+            disabled={!selectedClass}
+            activeOpacity={0.85}
+          >
+            <Ionicons name="checkmark" size={18} color="#fff" />
+            <Text style={assignStyles.assignBtnText}>
+              {selectedClass ? `Assign Class ${selectedClass}` : 'Select a class'}
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+const assignStyles = StyleSheet.create({
+  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', padding: 24 },
+  sheet: { backgroundColor: '#fff', borderRadius: 24, padding: 24 },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 24 },
+  title: { fontSize: 20, fontWeight: '800', color: '#1A202C' },
+  subtitle: { fontSize: 13, color: '#9A9AB0', marginTop: 2 },
+  closeBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: '#F0F4F8', justifyContent: 'center', alignItems: 'center' },
+  label: { fontSize: 12, fontWeight: '700', color: '#9A9AB0', letterSpacing: 1, marginBottom: 12 },
+  optionRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 24 },
+  optionChip: { paddingVertical: 10, paddingHorizontal: 20, borderRadius: 50, backgroundColor: '#F0F4F8', borderWidth: 2, borderColor: 'transparent' },
+  optionChipActive: { backgroundColor: '#E8EDF7', borderColor: '#1B3A6B' },
+  optionText: { fontSize: 15, fontWeight: '700', color: '#9A9AB0' },
+  optionTextActive: { color: '#1B3A6B' },
+  assignBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: '#1B3A6B', borderRadius: 16, paddingVertical: 16 },
+  assignBtnText: { fontSize: 16, fontWeight: '700', color: '#fff' },
+});
 
 // ─── LinkChildModal ───────────────────────────────────────────────────────────
 

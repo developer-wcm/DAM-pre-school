@@ -77,7 +77,7 @@ export default function RecordPaymentScreen() {
   const [selectedFees, setSelectedFees] = useState<Set<string>>(new Set());
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('Cash');
   const [transactionId, setTransactionId] = useState('');
-  const [paymentDate, setPaymentDate] = useState(todayString());
+  const [paymentDate] = useState(todayString());
   const [notes, setNotes] = useState('');
   const [loadingStudents, setLoadingStudents] = useState(true);
   const [loadingFees, setLoadingFees] = useState(false);
@@ -215,7 +215,7 @@ export default function RecordPaymentScreen() {
       <LinearGradient colors={['#EDE9F6', '#F0EEF8', '#EAF0F8']} style={{ flex: 1 }}>
         {/* Header */}
         <View style={styles.header}>
-          <TouchableOpacity style={styles.backBtn} onPress={() => router.navigate('/(dashboard)/')} activeOpacity={0.7}>
+          <TouchableOpacity style={styles.backBtn} onPress={() => router.back()} activeOpacity={0.7}>
             <Ionicons name="arrow-back" size={22} color={AppColors.textPrimary} />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Record Payment</Text>

@@ -366,7 +366,7 @@ export default function AdminDashboardScreen() {
           <View style={styles.header}>
             <View>
               <Text style={styles.greeting}>{getGreeting()}</Text>
-              <Text style={styles.greetingName}>{profile?.full_name ?? 'Admin'}</Text>
+              <Text style={styles.greetingName}>{profile?.full_name ?? (profile?.role === 'principal' ? 'Principal' : 'Admin')}</Text>
               <Text style={styles.date}>{today}</Text>
             </View>
             <TouchableOpacity

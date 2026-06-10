@@ -113,12 +113,16 @@ const ROUTE_MAP = {
   'user-management':   '/(dashboard)/user-management',
   'leave-requests':    '/(dashboard)/leave-requests',
   'csv-upload':        '/(dashboard)/csv-upload',
+  'system-settings':   '/(dashboard)/system-settings',
+  'data-export':       '/(dashboard)/data-export',
+  'appointments':      '/(dashboard)/appointments',
+  'data-deletion':     '/(dashboard)/data-deletion',
 } as const;
 
 export default function MoreScreen() {
   const router = useRouter();
     const { profile, signOut } = useAuth();
-  const displayName = profile?.full_name?.trim() || 'Admin';
+  const displayName = profile?.full_name?.trim() || (profile?.role === 'principal' ? 'Principal' : 'Admin');
 
   return (
     <View style={styles.container}>

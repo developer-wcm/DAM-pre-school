@@ -41,6 +41,8 @@ export default function TeacherLayout() {
           tabBarIcon: ({ color, size }) => <Ionicons name="person" size={size} color={color} />,
         }}
       />
+      <Tabs.Screen name="attendance-report" options={{ href: null, tabBarStyle: { display: 'none' } }} />
+      <Tabs.Screen name="progress-report"   options={{ href: null, tabBarStyle: { display: 'none' } }} />
     </Tabs>
   );
 }

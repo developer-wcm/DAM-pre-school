@@ -5,7 +5,6 @@ import { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
-  FlatList,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -177,7 +176,7 @@ export default function OutstandingFeesScreen() {
       <LinearGradient colors={['#EDE9F6', '#F0EEF8', '#EAF0F8']} style={{ flex: 1 }}>
         {/* Header */}
         <View style={styles.header}>
-          <TouchableOpacity style={styles.backBtn} onPress={() => router.navigate('/(dashboard)/')} activeOpacity={0.7}>
+          <TouchableOpacity style={styles.backBtn} onPress={() => router.back()} activeOpacity={0.7}>
             <Ionicons name="chevron-back" size={24} color={AppColors.primaryBlue} />
           </TouchableOpacity>
           <View style={{ flex: 1 }}>
