@@ -3,6 +3,7 @@ import { useRouter } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   ScrollView,
   StyleSheet,
   Text,
@@ -345,6 +346,7 @@ export default function ParentChildScreen() {
             <TouchableOpacity
               style={styles.noticeBtn}
               activeOpacity={0.85}
+              onPress={() => Alert.alert('Notices', 'No new notices from school at this time.')}
             >
               <Ionicons name="megaphone-outline" size={18} color="#FFFFFF" />
               <Text style={styles.noticeBtnText}>Notices</Text>

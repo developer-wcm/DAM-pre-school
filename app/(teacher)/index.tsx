@@ -233,7 +233,7 @@ export default function TeacherClassScreen() {
     ? `${teacher.assigned_class}${teacher.assigned_section ? ' - ' + teacher.assigned_section : ''}`
     : 'My Class';
 
-  const presentCount = students.filter((s) => s.present).length;
+  const presentCount = students.filter((s) => s.attendance === 'present').length;
   const attendancePercent = students.length > 0
     ? Math.round((presentCount / students.length) * 100)
     : 0;

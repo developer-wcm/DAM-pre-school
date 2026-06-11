@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "preschool-app",
+    "name": "DAM PreSchool",
     "slug": "preschool-app",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -10,7 +10,12 @@
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.developer.wcm.preschoolapp"
+      "bundleIdentifier": "com.developer.wcm.preschoolapp",
+      "infoPlist": {
+        "NSPhotoLibraryUsageDescription": "Used to attach photos during student admission and profile setup.",
+        "NSCameraUsageDescription": "Used to capture photos during student admission and profile setup.",
+        "NSPhotoLibraryAddUsageDescription": "Used to save documents and reports to your photo library."
+      }
     },
     "android": {
       "adaptiveIcon": {

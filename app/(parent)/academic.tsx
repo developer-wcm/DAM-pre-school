@@ -1,157 +1,195 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useState } from 'react';
-import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { useCallback, useEffect, useState } from 'react';
+import {
+  ActivityIndicator,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 import { COLORS } from '../../constants/admissionTheme';
+import { useChild } from '../../context/child';
+import { getIndianHolidays, IndianHoliday } from '../../lib/indianHolidays';
+import { supabase } from '../../lib/supabase';
 
-interface DayStatus {
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+type AttStatus = 'present' | 'absent' | 'late';
+
+interface DayData {
   date: number;
-  status?: 'present' | 'absent' | 'halfday' | 'holiday' | 'break' | 'today';
+  attendance: AttStatus | null;
+  isToday: boolean;
+  isHoliday: boolean;
+  holidayName?: string;
+  isWeekend: boolean;
 }
 
-interface Event {
-  id: string;
-  date: string;
-  day: string;
-  month: string;
-  title: string;
-  description: string;
-  type: 'event' | 'holiday';
-  icon?: string;
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function toYMD(year: number, month: number, day: number) {
+  return `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
 }
+
+function getDayColor(d: DayData) {
+  if (d.isToday) return COLORS.white;
+  if (d.isHoliday) return '#FF6B9D';
+  if (d.attendance === 'present') return COLORS.success;
+  if (d.attendance === 'absent') return COLORS.error;
+  if (d.attendance === 'late') return '#FFA500';
+  if (d.isWeekend) return '#9CA3AF';
+  return COLORS.textPrimary;
+}
+
+function getDayBg(d: DayData) {
+  if (d.isToday) return COLORS.primary;
+  if (d.isHoliday) return '#FFE8F0';
+  if (d.attendance === 'present') return '#E8F8F0';
+  if (d.attendance === 'absent') return '#FFE8E8';
+  if (d.attendance === 'late') return '#FFF4E6';
+  return 'transparent';
+}
+
+const MONTH_NAMES = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December',
+];
+
+// ─── Main Screen ──────────────────────────────────────────────────────────────
 
 export default function ParentAcademicScreen() {
-  const [currentMonth] = useState('February');
-  const [currentYear] = useState('2026');
+  const { activeChild } = useChild();
 
-  // Mock calendar data for February 2026
-  const calendarDays: DayStatus[] = [
-    // Week 1
-    { date: 2, status: 'present' },
-    { date: 3, status: 'absent' },
-    { date: 4, status: 'present' },
-    { date: 5, status: 'present' },
-    { date: 6, status: 'present' },
-    { date: 7 },
-    { date: 8 },
-    // Week 2
-    { date: 9, status: 'present' },
-    { date: 10, status: 'today' },
-    { date: 11 },
-    { date: 12, status: 'break' },
-    { date: 13 },
-    { date: 14 },
-    { date: 15 },
-    // Week 3
-    { date: 16, status: 'break' },
-    { date: 17 },
-    { date: 18 },
-    { date: 19, status: 'holiday' },
-    { date: 20 },
-    { date: 21 },
-    { date: 22 },
-    // Week 4
-    { date: 23 },
-    { date: 24 },
-    { date: 25 },
-    { date: 26, status: 'holiday' },
-    { date: 27 },
-    { date: 28 },
-  ];
+  const today = new Date();
+  const [viewYear, setViewYear] = useState(today.getFullYear());
+  const [viewMonth, setViewMonth] = useState(today.getMonth()); // 0-indexed
 
-  const attendanceStats = {
-    present: 15,
-    absent: 2,
-    halfDay: 1,
-    holidays: 2,
-  };
+  const [attendance, setAttendance] = useState<Record<string, AttStatus>>({});
+  const [holidays, setHolidays] = useState<IndianHoliday[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
 
-  const upcomingEvents: Event[] = [
-    {
-      id: '1',
-      date: '14',
-      day: 'FEB',
-      month: 'FEB',
-      title: "Valentine's Day",
-      description: 'Classroom celebration & craft time',
-      type: 'event',
-    },
-    {
-      id: '2',
-      date: '19',
-      day: 'FEB',
-      month: 'FEB',
-      title: 'Shivaji Jayanti',
-      description: 'School Closed',
-      type: 'holiday',
-      icon: '🚩',
-    },
-  ];
+  const fetchData = useCallback(async () => {
+    if (!activeChild?.id || !activeChild.school_id) return;
+    setLoading(true);
 
-  const getDayColor = (status?: string) => {
-    switch (status) {
-      case 'present':
-        return COLORS.success;
-      case 'absent':
-        return COLORS.error;
-      case 'halfday':
-        return '#FFA500';
-      case 'holiday':
-        return '#FF6B9D';
-      case 'break':
-        return '#60A5FA';
-      case 'today':
-        return COLORS.primary;
-      default:
-        return COLORS.textPrimary;
+    const monthStart = toYMD(viewYear, viewMonth, 1);
+    const lastDay = new Date(viewYear, viewMonth + 1, 0).getDate();
+    const monthEnd = toYMD(viewYear, viewMonth, lastDay);
+
+    const todayKey = toYMD(today.getFullYear(), today.getMonth(), today.getDate());
+
+    const [attRes, holidaysData] = await Promise.all([
+      supabase
+        .from('attendance')
+        .select('date, status')
+        .eq('student_id', activeChild.id)
+        .gte('date', monthStart)
+        .lte('date', monthEnd),
+      getIndianHolidays(activeChild.school_id, todayKey).catch(() => [] as IndianHoliday[]),
+    ]);
+
+    const attMap: Record<string, AttStatus> = {};
+    for (const row of attRes.data ?? []) {
+      attMap[row.date] = row.status as AttStatus;
     }
-  };
+    setAttendance(attMap);
+    setHolidays(holidaysData);
+    setLoading(false);
+    setRefreshing(false);
+  }, [activeChild?.id, activeChild?.school_id, viewYear, viewMonth]);
 
-  const getDayBgColor = (status?: string) => {
-    switch (status) {
-      case 'present':
-        return '#E8F8F0';
-      case 'absent':
-        return '#FFE8E8';
-      case 'halfday':
-        return '#FFF4E6';
-      case 'holiday':
-        return '#FFE8F0';
-      case 'break':
-        return '#E0F2FE';
-      case 'today':
-        return COLORS.primary;
-      default:
-        return 'transparent';
+  useEffect(() => { fetchData(); }, [fetchData]);
+
+  const onRefresh = useCallback(() => { setRefreshing(true); fetchData(); }, [fetchData]);
+
+  // ── Calendar layout ──────────────────────────────────────────────────────
+
+  const firstDayOfWeek = new Date(viewYear, viewMonth, 1).getDay(); // 0=Sun
+  const daysInMonth = new Date(viewYear, viewMonth + 1, 0).getDate();
+  const todayKey = toYMD(today.getFullYear(), today.getMonth(), today.getDate());
+
+  // Build a set of holiday date strings for this month
+  const holidaySet = new Set<string>();
+  const holidayNameMap: Record<string, string> = {};
+  for (const h of holidays) {
+    const start = new Date(h.date);
+    const end = h.date_to ? new Date(h.date_to) : start;
+    const cur = new Date(start);
+    while (cur <= end) {
+      const key = cur.toISOString().split('T')[0];
+      holidaySet.add(key);
+      holidayNameMap[key] = h.name;
+      cur.setDate(cur.getDate() + 1);
     }
-  };
+  }
+
+  const days: DayData[] = [];
+  for (let d = 1; d <= daysInMonth; d++) {
+    const key = toYMD(viewYear, viewMonth, d);
+    const weekday = new Date(viewYear, viewMonth, d).getDay();
+    days.push({
+      date: d,
+      attendance: attendance[key] ?? null,
+      isToday: key === todayKey,
+      isHoliday: holidaySet.has(key),
+      holidayName: holidayNameMap[key],
+      isWeekend: weekday === 0 || weekday === 6,
+    });
+  }
+
+  // Stats
+  const presentCount = Object.values(attendance).filter((s) => s === 'present').length;
+  const absentCount  = Object.values(attendance).filter((s) => s === 'absent').length;
+  const lateCount    = Object.values(attendance).filter((s) => s === 'late').length;
+  const holidayCount = days.filter((d) => d.isHoliday && !d.isWeekend).length;
+
+  // Upcoming holidays (from today forward, next 5)
+  const upcomingHolidays = holidays
+    .filter((h) => (h.date_to ?? h.date) >= todayKey)
+    .slice(0, 5);
+
+  // Month navigation
+  function prevMonth() {
+    if (viewMonth === 0) { setViewYear((y) => y - 1); setViewMonth(11); }
+    else setViewMonth((m) => m - 1);
+  }
+  function nextMonth() {
+    if (viewMonth === 11) { setViewYear((y) => y + 1); setViewMonth(0); }
+    else setViewMonth((m) => m + 1);
+  }
 
   return (
     <View style={styles.container}>
-      {/* Header */}
       <View style={styles.header}>
         <View>
           <Text style={styles.headerTitle}>Calendar</Text>
           <View style={styles.subtitleRow}>
             <Ionicons name="calendar" size={14} color={COLORS.primary} />
-            <Text style={styles.headerSubtitle}>Priya's Attendance & School Events</Text>
+            <Text style={styles.headerSubtitle}>
+              {activeChild?.full_name ? `${activeChild.full_name}'s` : 'Attendance &'} School Calendar
+            </Text>
           </View>
         </View>
       </View>
 
-      <ScrollView 
+      <ScrollView
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={COLORS.primary} />}
       >
         {/* Calendar Card */}
         <View style={styles.calendarCard}>
           {/* Month Navigation */}
           <View style={styles.monthNav}>
-            <TouchableOpacity style={styles.navButton} activeOpacity={0.7}>
+            <TouchableOpacity style={styles.navButton} onPress={prevMonth} activeOpacity={0.7}>
               <Ionicons name="chevron-back" size={20} color={COLORS.textPrimary} />
             </TouchableOpacity>
-            <Text style={styles.monthText}>{currentMonth} {currentYear}</Text>
-            <TouchableOpacity style={styles.navButton} activeOpacity={0.7}>
+            <Text style={styles.monthText}>{MONTH_NAMES[viewMonth]} {viewYear}</Text>
+            <TouchableOpacity style={styles.navButton} onPress={nextMonth} activeOpacity={0.7}>
               <Ionicons name="chevron-forward" size={20} color={COLORS.textPrimary} />
             </TouchableOpacity>
           </View>
@@ -163,434 +201,196 @@ export default function ParentAcademicScreen() {
             ))}
           </View>
 
-          {/* Calendar Grid */}
-          <View style={styles.calendarGrid}>
-            {/* Empty cells for days before month starts (Feb 2026 starts on Sunday) */}
-            {[28, 29, 30, 31].map((date) => (
-              <View key={`prev-${date}`} style={styles.dayCell}>
-                <Text style={styles.prevMonthDay}>{date}</Text>
-              </View>
-            ))}
+          {loading ? (
+            <ActivityIndicator color={COLORS.primary} style={{ marginVertical: 30 }} />
+          ) : (
+            <View style={styles.calendarGrid}>
+              {/* Empty cells before month start */}
+              {Array.from({ length: firstDayOfWeek }).map((_, i) => (
+                <View key={`empty-${i}`} style={styles.dayCell} />
+              ))}
 
-            {/* Actual month days */}
-            {calendarDays.map((day) => (
-              <TouchableOpacity 
-                key={day.date} 
-                style={styles.dayCell}
-                activeOpacity={0.7}
-              >
-                <View style={[
-                  styles.dayCircle,
-                  day.status && { backgroundColor: getDayBgColor(day.status) }
-                ]}>
-                  <Text style={[
-                    styles.dayText,
-                    day.status && { 
-                      color: day.status === 'today' ? COLORS.white : getDayColor(day.status),
-                      fontWeight: day.status === 'today' ? '700' : '600'
-                    }
-                  ]}>
-                    {day.date}
-                  </Text>
+              {days.map((day) => (
+                <View key={day.date} style={styles.dayCell}>
+                  <View style={[styles.dayCircle, { backgroundColor: getDayBg(day) }]}>
+                    <Text style={[styles.dayText, { color: getDayColor(day), fontWeight: day.isToday ? '800' : '600' }]}>
+                      {day.date}
+                    </Text>
+                  </View>
                 </View>
-              </TouchableOpacity>
-            ))}
-
-            {/* Empty cells for next month */}
-            {[1, 2, 3, 4, 5, 6, 7, 8].map((date) => (
-              <View key={`next-${date}`} style={styles.dayCell}>
-                <Text style={styles.nextMonthDay}>{date}</Text>
-              </View>
-            ))}
-          </View>
+              ))}
+            </View>
+          )}
 
           {/* Legend */}
           <View style={styles.legend}>
             <View style={styles.legendRow}>
-              <View style={styles.legendItem}>
-                <View style={[styles.legendDot, { backgroundColor: COLORS.success }]} />
-                <Text style={styles.legendText}>Present</Text>
-              </View>
-              <View style={styles.legendItem}>
-                <View style={[styles.legendDot, { backgroundColor: COLORS.error }]} />
-                <Text style={styles.legendText}>Absent</Text>
-              </View>
-              <View style={styles.legendItem}>
-                <View style={[styles.legendDot, { backgroundColor: '#FFA500' }]} />
-                <Text style={styles.legendText}>Half Day</Text>
-              </View>
+              {[
+                { color: COLORS.success, label: 'Present' },
+                { color: COLORS.error,   label: 'Absent'  },
+                { color: '#FFA500',      label: 'Late'    },
+              ].map(({ color, label }) => (
+                <View key={label} style={styles.legendItem}>
+                  <View style={[styles.legendDot, { backgroundColor: color }]} />
+                  <Text style={styles.legendText}>{label}</Text>
+                </View>
+              ))}
             </View>
             <View style={styles.legendRow}>
-              <View style={styles.legendItem}>
-                <View style={[styles.legendDot, { backgroundColor: '#FF6B9D' }]} />
-                <Text style={styles.legendText}>Holiday</Text>
-              </View>
-              <View style={styles.legendItem}>
-                <View style={[styles.legendDot, { backgroundColor: '#60A5FA' }]} />
-                <Text style={styles.legendText}>Break</Text>
-              </View>
-              <View style={styles.legendItem}>
-                <View style={[styles.legendDot, { backgroundColor: COLORS.primary, borderWidth: 2, borderColor: COLORS.primary }]} />
-                <Text style={styles.legendText}>Today</Text>
-              </View>
+              {[
+                { color: '#FF6B9D', label: 'Holiday' },
+                { color: '#9CA3AF', label: 'Weekend' },
+                { color: COLORS.primary, label: 'Today' },
+              ].map(({ color, label }) => (
+                <View key={label} style={styles.legendItem}>
+                  <View style={[styles.legendDot, { backgroundColor: color }]} />
+                  <Text style={styles.legendText}>{label}</Text>
+                </View>
+              ))}
             </View>
           </View>
         </View>
 
-        {/* Attendance Summary */}
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>February Attendance</Text>
-        </View>
-
+        {/* Monthly Attendance Stats */}
+        <Text style={styles.sectionTitle}>{MONTH_NAMES[viewMonth]} Attendance</Text>
         <View style={styles.statsGrid}>
-          <View style={styles.statCard}>
-            <View style={[styles.statIcon, { backgroundColor: '#E8F8F0' }]}>
-              <Ionicons name="checkmark-circle" size={24} color={COLORS.success} />
-            </View>
-            <Text style={styles.statNumber}>{attendanceStats.present}</Text>
-            <Text style={styles.statLabel}>Present</Text>
-          </View>
-
-          <View style={styles.statCard}>
-            <View style={[styles.statIcon, { backgroundColor: '#FFE8E8' }]}>
-              <Ionicons name="close-circle" size={24} color={COLORS.error} />
-            </View>
-            <Text style={styles.statNumber}>{attendanceStats.absent}</Text>
-            <Text style={styles.statLabel}>Absent</Text>
-          </View>
-
-          <View style={styles.statCard}>
-            <View style={[styles.statIcon, { backgroundColor: '#FFF4E6' }]}>
-              <Ionicons name="time" size={24} color="#FFA500" />
-            </View>
-            <Text style={styles.statNumber}>{attendanceStats.halfDay}</Text>
-            <Text style={styles.statLabel}>Half Day</Text>
-          </View>
-
-          <View style={styles.statCard}>
-            <View style={[styles.statIcon, { backgroundColor: '#E0F2FE' }]}>
-              <Ionicons name="umbrella" size={24} color="#60A5FA" />
-            </View>
-            <Text style={styles.statNumber}>{attendanceStats.holidays}</Text>
-            <Text style={styles.statLabel}>Holidays</Text>
-          </View>
-        </View>
-
-        {/* Upcoming Events */}
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Upcoming Events</Text>
-        </View>
-
-        <View style={styles.eventsList}>
-          {upcomingEvents.map((event) => (
-            <View key={event.id} style={styles.eventCard}>
-              <View style={[
-                styles.eventDate,
-                { 
-                  backgroundColor: event.type === 'holiday' ? COLORS.errorLight : COLORS.secondarySoft,
-                  borderLeftWidth: 4,
-                  borderLeftColor: event.type === 'holiday' ? COLORS.error : COLORS.secondary
-                }
-              ]}>
-                <Text style={[styles.eventMonth, { color: event.type === 'holiday' ? COLORS.error : COLORS.secondary }]}>
-                  {event.month}
-                </Text>
-                <Text style={[styles.eventDay, { color: event.type === 'holiday' ? COLORS.error : COLORS.secondary }]}>
-                  {event.date}
-                </Text>
+          {[
+            { icon: 'checkmark-circle', bg: '#E8F8F0', color: COLORS.success, count: presentCount, label: 'Present' },
+            { icon: 'close-circle',     bg: '#FFE8E8', color: COLORS.error,   count: absentCount,  label: 'Absent'  },
+            { icon: 'time',             bg: '#FFF4E6', color: '#FFA500',      count: lateCount,    label: 'Late'    },
+            { icon: 'umbrella',         bg: '#FFE8F0', color: '#FF6B9D',      count: holidayCount, label: 'Holidays'},
+          ].map(({ icon, bg, color, count, label }) => (
+            <View key={label} style={styles.statCard}>
+              <View style={[styles.statIcon, { backgroundColor: bg }]}>
+                <Ionicons name={icon as any} size={24} color={color} />
               </View>
-
-              <View style={styles.eventContent}>
-                <View style={styles.eventHeader}>
-                  <Text style={styles.eventTitle}>{event.title}</Text>
-                  <View style={[
-                    styles.eventTypeBadge,
-                    { backgroundColor: event.type === 'holiday' ? COLORS.errorLight : COLORS.secondarySoft }
-                  ]}>
-                    <Text style={[
-                      styles.eventTypeText,
-                      { color: event.type === 'holiday' ? COLORS.error : COLORS.secondary }
-                    ]}>
-                      {event.type === 'holiday' ? 'HOLIDAY' : 'EVENT'}
-                    </Text>
-                  </View>
-                </View>
-                <Text style={styles.eventDescription}>{event.description}</Text>
-              </View>
-
-              {event.icon && (
-                <View style={styles.eventIconCircle}>
-                  <Text style={styles.eventIcon}>{event.icon}</Text>
-                </View>
-              )}
+              <Text style={styles.statNumber}>{count}</Text>
+              <Text style={styles.statLabel}>{label}</Text>
             </View>
           ))}
         </View>
 
-        {/* Bottom Spacing */}
+        {/* Upcoming Holidays */}
+        {upcomingHolidays.length > 0 && (
+          <>
+            <Text style={styles.sectionTitle}>Upcoming Holidays</Text>
+            <View style={styles.eventsList}>
+              {upcomingHolidays.map((h, idx) => {
+                const start = new Date(h.date);
+                const isMultiDay = h.date_to && h.date_to !== h.date;
+                const daysUntil = Math.ceil(
+                  (start.getTime() - new Date().setHours(0, 0, 0, 0)) / (1000 * 60 * 60 * 24)
+                );
+                const isToday = daysUntil === 0;
+                const badgeColor = isToday ? COLORS.error : '#FF6B9D';
+                return (
+                  <View key={idx} style={styles.eventCard}>
+                    <View style={[styles.eventDateBox, { backgroundColor: '#FFE8F0', borderLeftColor: badgeColor }]}>
+                      <Text style={[styles.eventMonth, { color: badgeColor }]}>
+                        {MONTH_NAMES[start.getMonth()].slice(0, 3).toUpperCase()}
+                      </Text>
+                      <Text style={[styles.eventDay, { color: badgeColor }]}>{start.getDate()}</Text>
+                    </View>
+                    <View style={styles.eventContent}>
+                      <View style={styles.eventHeader}>
+                        <Text style={styles.eventTitle} numberOfLines={1}>{h.name}</Text>
+                        <View style={[styles.eventTypeBadge, { backgroundColor: '#FFE8F0' }]}>
+                          <Text style={[styles.eventTypeText, { color: badgeColor }]}>HOLIDAY</Text>
+                        </View>
+                      </View>
+                      <Text style={styles.eventDescription}>
+                        {isToday ? 'Today' : `${daysUntil} day${daysUntil !== 1 ? 's' : ''} away`}
+                        {isMultiDay ? ` • ${h.days} days` : ''}
+                      </Text>
+                    </View>
+                  </View>
+                );
+              })}
+            </View>
+          </>
+        )}
+
         <View style={{ height: 100 }} />
       </ScrollView>
     </View>
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: COLORS.background,
-  },
-  header: {
-    paddingHorizontal: 20,
-    paddingTop: 60,
-    paddingBottom: 20,
-    backgroundColor: COLORS.background,
-  },
-  headerTitle: {
-    fontSize: 24,
-    fontWeight: '800',
-    color: COLORS.textPrimary,
-    marginBottom: 4,
-  },
-  subtitleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  headerSubtitle: {
-    fontSize: 13,
-    fontWeight: '500',
-    color: COLORS.textSecondary,
-  },
-  scrollView: {
-    flex: 1,
-  },
-  scrollContent: {
-    padding: 20,
-    gap: 20,
-  },
+// ─── Styles ───────────────────────────────────────────────────────────────────
 
-  // Calendar Card
+const styles = StyleSheet.create({
+  container: { flex: 1, backgroundColor: COLORS.background },
+  header: {
+    paddingHorizontal: 20, paddingTop: 60, paddingBottom: 20, backgroundColor: COLORS.background,
+  },
+  headerTitle: { fontSize: 24, fontWeight: '800', color: COLORS.textPrimary, marginBottom: 4 },
+  subtitleRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  headerSubtitle: { fontSize: 13, fontWeight: '500', color: COLORS.textSecondary },
+  scrollView: { flex: 1 },
+  scrollContent: { padding: 20, gap: 20 },
+
   calendarCard: {
-    backgroundColor: COLORS.white,
-    borderRadius: 24,
-    padding: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 16,
-    elevation: 4,
+    backgroundColor: COLORS.white, borderRadius: 24, padding: 20,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1, shadowRadius: 16, elevation: 4,
   },
   monthNav: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 20,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20,
   },
   navButton: {
-    width: 32,
-    height: 32,
-    borderRadius: 8,
-    backgroundColor: '#F5F5F5',
-    justifyContent: 'center',
-    alignItems: 'center',
+    width: 32, height: 32, borderRadius: 8, backgroundColor: '#F5F5F5',
+    justifyContent: 'center', alignItems: 'center',
   },
-  monthText: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: COLORS.textPrimary,
-  },
-  weekdayRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    marginBottom: 12,
-  },
+  monthText: { fontSize: 16, fontWeight: '700', color: COLORS.textPrimary },
+  weekdayRow: { flexDirection: 'row', justifyContent: 'space-around', marginBottom: 12 },
   weekdayText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: COLORS.textLight,
-    width: 36,
-    textAlign: 'center',
+    fontSize: 12, fontWeight: '600', color: COLORS.textLight, width: 36, textAlign: 'center',
   },
-  calendarGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 4,
-  },
-  dayCell: {
-    width: '13.28%',
-    aspectRatio: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
+  calendarGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 4 },
+  dayCell: { width: '13.28%', aspectRatio: 1, justifyContent: 'center', alignItems: 'center' },
   dayCircle: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    justifyContent: 'center',
-    alignItems: 'center',
+    width: 32, height: 32, borderRadius: 16, justifyContent: 'center', alignItems: 'center',
   },
-  dayText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: COLORS.textPrimary,
-  },
-  prevMonthDay: {
-    fontSize: 13,
-    fontWeight: '500',
-    color: '#D0D0D0',
-  },
-  nextMonthDay: {
-    fontSize: 13,
-    fontWeight: '500',
-    color: '#D0D0D0',
-  },
+  dayText: { fontSize: 13, fontWeight: '600', color: COLORS.textPrimary },
+
   legend: {
-    marginTop: 20,
-    paddingTop: 16,
-    borderTopWidth: 1,
-    borderTopColor: '#F0F0F0',
-    gap: 8,
+    marginTop: 20, paddingTop: 16, borderTopWidth: 1, borderTopColor: '#F0F0F0', gap: 8,
   },
-  legendRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-  },
-  legendItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  legendDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-  },
-  legendText: {
-    fontSize: 11,
-    fontWeight: '500',
-    color: COLORS.textSecondary,
-  },
+  legendRow: { flexDirection: 'row', justifyContent: 'space-around' },
+  legendItem: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  legendDot: { width: 10, height: 10, borderRadius: 5 },
+  legendText: { fontSize: 11, fontWeight: '500', color: COLORS.textSecondary },
 
-  // Section Header
-  sectionHeader: {
-    marginTop: 8,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: COLORS.textPrimary,
-  },
+  sectionTitle: { fontSize: 18, fontWeight: '700', color: COLORS.textPrimary, marginTop: 4 },
 
-  // Stats Grid
-  statsGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 12,
-  },
+  statsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
   statCard: {
-    flex: 1,
-    minWidth: '47%',
-    backgroundColor: COLORS.white,
-    borderRadius: 16,
-    padding: 16,
-    alignItems: 'center',
-    gap: 8,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
-    elevation: 2,
+    flex: 1, minWidth: '47%', backgroundColor: COLORS.white, borderRadius: 16,
+    padding: 16, alignItems: 'center', gap: 8,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06, shadowRadius: 8, elevation: 2,
   },
-  statIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  statNumber: {
-    fontSize: 24,
-    fontWeight: '800',
-    color: COLORS.textPrimary,
-  },
-  statLabel: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: COLORS.textSecondary,
-  },
+  statIcon: { width: 48, height: 48, borderRadius: 24, justifyContent: 'center', alignItems: 'center' },
+  statNumber: { fontSize: 24, fontWeight: '800', color: COLORS.textPrimary },
+  statLabel: { fontSize: 13, fontWeight: '600', color: COLORS.textSecondary },
 
-  // Events List
-  eventsList: {
-    gap: 12,
-  },
+  eventsList: { gap: 12 },
   eventCard: {
-    flexDirection: 'row',
-    backgroundColor: COLORS.white,
-    borderRadius: 16,
-    padding: 16,
-    gap: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 12,
-    elevation: 3,
+    flexDirection: 'row', backgroundColor: COLORS.white, borderRadius: 16,
+    padding: 16, gap: 12,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08, shadowRadius: 12, elevation: 3,
   },
-  eventDate: {
-    width: 56,
-    paddingVertical: 8,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
+  eventDateBox: {
+    width: 56, paddingVertical: 8, borderRadius: 12, alignItems: 'center',
+    justifyContent: 'center', borderLeftWidth: 4,
   },
-  eventMonth: {
-    fontSize: 11,
-    fontWeight: '700',
-    textTransform: 'uppercase',
-  },
-  eventDay: {
-    fontSize: 20,
-    fontWeight: '800',
-  },
-  eventContent: {
-    flex: 1,
-    gap: 4,
-  },
-  eventHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 8,
-  },
-  eventTitle: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: COLORS.textPrimary,
-    flex: 1,
-  },
-  eventTypeBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 6,
-  },
-  eventTypeText: {
-    fontSize: 9,
-    fontWeight: '800',
-    letterSpacing: 0.5,
-  },
-  eventDescription: {
-    fontSize: 13,
-    fontWeight: '500',
-    color: COLORS.textLight,
-  },
-  eventIconCircle: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#FFF4E6',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  eventIcon: {
-    fontSize: 20,
-  },
+  eventMonth: { fontSize: 11, fontWeight: '700', textTransform: 'uppercase' },
+  eventDay: { fontSize: 20, fontWeight: '800' },
+  eventContent: { flex: 1, gap: 4 },
+  eventHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
+  eventTitle: { fontSize: 15, fontWeight: '700', color: COLORS.textPrimary, flex: 1 },
+  eventTypeBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 },
+  eventTypeText: { fontSize: 9, fontWeight: '800', letterSpacing: 0.5 },
+  eventDescription: { fontSize: 13, fontWeight: '500', color: COLORS.textLight },
 });

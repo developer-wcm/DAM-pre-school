@@ -1,4 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
+import * as Linking from 'expo-linking';
 import { useRouter } from 'expo-router';
 import { Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useAuth } from '../../context/auth';
@@ -180,10 +181,12 @@ export default function MoreScreen() {
             <Text style={styles.logoutText}>Log Out</Text>
           </TouchableOpacity> 
           <Text style={styles.footerText}>DMA PreSchool Manager v2.4.0</Text>
-          <Text style={styles.footerText}>
-            Need help?{' '}
-            <Text style={styles.footerLink}>Contact Support</Text>
-          </Text>
+          <TouchableOpacity onPress={() => Linking.openURL('mailto:support@whitecloudsmedia.com')}>
+            <Text style={styles.footerText}>
+              Need help?{' '}
+              <Text style={styles.footerLink}>Contact Support</Text>
+            </Text>
+          </TouchableOpacity>
         </View>
       </ScrollView>
     </View>
