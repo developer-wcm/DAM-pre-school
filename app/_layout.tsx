@@ -2,12 +2,20 @@ import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { AdmissionProvider } from '../context/admission';
-import { AuthProvider } from '../context/auth';
+import { AuthProvider, useAuth } from '../context/auth';
+import { usePushNotifications } from '../hooks/usePushNotifications';
+
+function PushNotificationManager() {
+  const { user, profile } = useAuth();
+  usePushNotifications(user?.id ?? null, profile?.role ?? null, profile?.school_id ?? null);
+  return null;
+}
 
 export default function RootLayout() {
   return (
     <SafeAreaProvider>
       <AuthProvider>
+        <PushNotificationManager />
         <AdmissionProvider>
           <Stack>
             <Stack.Screen name="index" options={{ headerShown: false }} />

@@ -20,6 +20,7 @@ import AttendanceDatePickerModal from '../../components/AttendanceDatePickerModa
 import { COLORS } from '../../constants/admissionTheme';
 import { DEFAULT_SCHOOL_ID } from '../../constants/school';
 import { useAuth } from '../../context/auth';
+import { sendPushToRoles } from '../../lib/pushNotifications';
 import {
   addMonths as shiftMonths,
   AttendanceRecordStatus,
@@ -400,6 +401,19 @@ export default function AttendanceScreen() {
         nextSnapshot[student.id] = student.attendance;
       });
       setSavedSnapshot(nextSnapshot);
+
+      const presentCount = toUpsert.filter((s) => s.attendance === 'present').length;
+      const dateLabel = new Date(selectedDate).toLocaleDateString('en-IN', {
+        day: 'numeric', month: 'short', year: 'numeric',
+      });
+      sendPushToRoles(
+        ['parent'],
+        'Attendance Updated',
+        `Attendance for ${dateLabel}: ${presentCount} student${presentCount !== 1 ? 's' : ''} present.`,
+        schoolId,
+        { screen: 'attendance', date: selectedDate }
+      );
+
       Alert.alert('Saved', 'Attendance has been updated.');
       fetchAttendanceData();
     } catch (error) {

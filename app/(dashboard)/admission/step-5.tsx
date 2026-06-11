@@ -1,6 +1,7 @@
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
+import { sendPushToRoles } from '../../../lib/pushNotifications';
 import { supabase } from '../../../lib/supabase';
 import { DEFAULT_SCHOOL_ID } from '../../../constants/school';
 import {
@@ -254,7 +255,16 @@ export default function AdmissionStep5() {
         }
       }
 
-      // ── 3. Done ──────────────────────────────────────────────────────────────
+      // ── 3. Notify staff about new admission ──────────────────────────────────
+      sendPushToRoles(
+        ['admin', 'principal', 'teacher'],
+        'New Student Admitted',
+        `${fullName} has been admitted to ${admissionData.selectedClass}.`,
+        DEFAULT_SCHOOL_ID,
+        { screen: 'students', studentId }
+      )
+
+      // ── 4. Done ──────────────────────────────────────────────────────────────
       resetAdmissionData();
       Alert.alert('Admission Successful', `${fullName} has been admitted successfully!`, [
         { text: 'OK', onPress: () => router.replace('/(dashboard)/students') },
