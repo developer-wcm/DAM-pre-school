@@ -31,6 +31,7 @@ interface SchoolSettings {
   fee_due_day: string;
   late_fee_amount: string;
   attendance_cutoff_time: string;
+  staff_wifi_name: string;
   notify_absent_parents: boolean;
   notify_fee_overdue: boolean;
   notify_leave_requests: boolean;
@@ -47,6 +48,7 @@ const DEFAULT_SETTINGS: SchoolSettings = {
   fee_due_day: '10',
   late_fee_amount: '0',
   attendance_cutoff_time: '09:30',
+  staff_wifi_name: '',
   notify_absent_parents: true,
   notify_fee_overdue: true,
   notify_leave_requests: true,
@@ -191,6 +193,7 @@ export default function SystemSettingsScreen() {
           fee_due_day: String(data.fee_due_day ?? '10'),
           late_fee_amount: String(data.late_fee_amount ?? '0'),
           attendance_cutoff_time: data.attendance_cutoff_time ?? '09:30',
+          staff_wifi_name: data.staff_wifi_name ?? '',
           notify_absent_parents: data.notify_absent_parents ?? true,
           notify_fee_overdue: data.notify_fee_overdue ?? true,
           notify_leave_requests: data.notify_leave_requests ?? true,
@@ -231,6 +234,7 @@ export default function SystemSettingsScreen() {
         fee_due_day: dueDayNum,
         late_fee_amount: parseFloat(settings.late_fee_amount) || 0,
         attendance_cutoff_time: settings.attendance_cutoff_time.trim(),
+        staff_wifi_name: settings.staff_wifi_name.trim(),
         notify_absent_parents: settings.notify_absent_parents,
         notify_fee_overdue: settings.notify_fee_overdue,
         notify_leave_requests: settings.notify_leave_requests,
@@ -407,6 +411,24 @@ export default function SystemSettingsScreen() {
                   onChangeText={set('attendance_cutoff_time')}
                   icon="time-outline"
                 />
+              </View>
+
+              <View style={styles.card}>
+                <SectionHeader icon="wifi-outline" title="Staff Auto Check-In" color="#2A9D6E" />
+                <FieldRow
+                  label="School WiFi Name"
+                  value={settings.staff_wifi_name}
+                  placeholder="Exact WiFi network name"
+                  onChangeText={set('staff_wifi_name')}
+                  icon="wifi-outline"
+                />
+                <View style={[styles.infoCard, { marginTop: 4, padding: 12, borderRadius: 12, marginHorizontal: 14, marginBottom: 14 }]}>
+                  <Ionicons name="information-circle-outline" size={18} color={AppColors.primaryBlue} />
+                  <Text style={styles.infoText}>
+                    When a teacher&apos;s phone is connected to this WiFi network, they are automatically
+                    marked present. Arriving after the attendance cutoff marks them late. Leave blank to disable.
+                  </Text>
+                </View>
               </View>
 
               <View style={styles.card}>

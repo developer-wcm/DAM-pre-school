@@ -72,6 +72,39 @@ create policy "Admin/Teacher can manage attendance"
   on public.attendance for all
   using (auth.role() = 'authenticated');
 
+-- 3b. STAFF ATTENDANCE TABLE
+-- Staff attendance is kept separate from student attendance because staff are
+-- in `profiles`, not `students`. Used by the admin Staff Attendance screen and
+-- the teacher WiFi auto check-in on the Profile tab.
+create table if not exists public.staff_attendance (
+  id           uuid primary key default gen_random_uuid(),
+  staff_id     uuid references public.profiles(id) on delete cascade,
+  school_id    text not null,
+  date         date not null default current_date,
+  status       text check (status in ('present', 'absent', 'late')) not null,
+  marked_by    uuid references public.profiles(id),
+  notes        text,
+  created_at   timestamptz default now(),
+  unique(staff_id, date)
+);
+
+alter table public.staff_attendance enable row level security;
+
+drop policy if exists "school staff can view staff attendance" on public.staff_attendance;
+create policy "school staff can view staff attendance"
+  on public.staff_attendance for select
+  using (school_id in (
+    select school_id from public.profiles where id = auth.uid()
+  ));
+
+drop policy if exists "admins can manage staff attendance" on public.staff_attendance;
+create policy "admins can manage staff attendance"
+  on public.staff_attendance for all
+  using (school_id in (
+    select school_id from public.profiles
+    where id = auth.uid() and role in ('admin', 'teacher')
+  ));
+
 -- 4. FEES TABLE
 create table if not exists public.fees (
   id           uuid primary key default gen_random_uuid(),
