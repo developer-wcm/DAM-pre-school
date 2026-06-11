@@ -1,4 +1,4 @@
-﻿import { Ionicons } from '@expo/vector-icons';
+import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
@@ -14,10 +14,12 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { COLORS } from '../../constants/admissionTheme';
 import { DEFAULT_SCHOOL_ID } from '../../constants/school';
+import { useAuth } from '../../context/auth';
 import { toDateKey } from '../../lib/attendance';
+import { markStaffAttendance, mapStaffAttendanceError, StaffMarkStatus } from '../../lib/staffAttendance';
 import { supabase } from '../../lib/supabase';
 
-type StaffAttendanceStatus = 'present' | 'absent' | 'late' | 'not-marked';
+type StaffAttendanceStatus = StaffMarkStatus | 'not-marked';
 
 type StaffRecord = {
   id: string;
@@ -25,6 +27,12 @@ type StaffRecord = {
   role: string;
   attendance: StaffAttendanceStatus;
 };
+
+const MARK_OPTIONS: { status: StaffMarkStatus; label: string; color: string; light: string }[] = [
+  { status: 'present', label: 'P', color: COLORS.success, light: COLORS.successLight },
+  { status: 'absent',  label: 'A', color: COLORS.error,   light: COLORS.errorLight },
+  { status: 'late',    label: 'L', color: COLORS.warning, light: COLORS.warningLight },
+];
 
 function getDateLabel(date: Date) {
   return date.toLocaleDateString('en-IN', {
@@ -35,77 +43,64 @@ function getDateLabel(date: Date) {
   });
 }
 
-function getStatusLabel(status: StaffAttendanceStatus) {
-  switch (status) {
-    case 'present':
-      return 'Present';
-    case 'absent':
-      return 'Absent';
-    case 'late':
-      return 'Late';
-    default:
-      return 'Not marked';
-  }
+function isSameDay(a: Date, b: Date) {
+  return toDateKey(a) === toDateKey(b);
 }
 
-function getStatusStyles(status: StaffAttendanceStatus) {
-  switch (status) {
-    case 'present':
-      return { backgroundColor: COLORS.successLight, color: COLORS.success };
-    case 'absent':
-      return { backgroundColor: COLORS.errorLight, color: COLORS.error };
-    case 'late':
-      return { backgroundColor: COLORS.warningLight, color: COLORS.warning };
-    default:
-      return { backgroundColor: COLORS.lightGray, color: COLORS.textSecondary };
-  }
+function addDays(date: Date, delta: number) {
+  const next = new Date(date);
+  next.setDate(next.getDate() + delta);
+  return next;
 }
 
 export default function StaffAttendanceScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const [selectedDate] = useState(() => new Date());
+  const { profile, user } = useAuth();
+
+  const schoolId = profile?.school_id ?? DEFAULT_SCHOOL_ID;
+  const today = useMemo(() => new Date(), []);
+
+  const [selectedDate, setSelectedDate] = useState(() => new Date());
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [staff, setStaff] = useState<StaffRecord[]>([]);
+  const [savingId, setSavingId] = useState<string | null>(null);
+  const [bulkSaving, setBulkSaving] = useState(false);
 
   const selectedDateKey = toDateKey(selectedDate);
+  const isToday = isSameDay(selectedDate, today);
 
   const fetchStaffAttendance = useCallback(async () => {
-    console.log('[StaffAttendance] Fetching for schoolId:', DEFAULT_SCHOOL_ID, 'date:', selectedDateKey);
-
     try {
       const [staffRes, attendanceRes] = await Promise.all([
         supabase.rpc('get_staff_profiles'),
         supabase
-          .from('attendance')
-          .select('student_id, status')
-          .eq('school_id', DEFAULT_SCHOOL_ID)
+          .from('staff_attendance')
+          .select('staff_id, status')
+          .eq('school_id', schoolId)
           .eq('date', selectedDateKey),
       ]);
-
-      console.log('[StaffAttendance] Staff response:', staffRes.data?.length, 'Attendance response:', attendanceRes.data?.length);
-      console.log('[StaffAttendance] Errors - Staff:', staffRes.error, 'Attendance:', attendanceRes.error);
 
       if (staffRes.error) throw staffRes.error;
       if (attendanceRes.error) throw attendanceRes.error;
 
       const attendanceMap = new Map(
-        (attendanceRes.data ?? []).map((record: { student_id: string; status: string }) => [
-          record.student_id,
+        (attendanceRes.data ?? []).map((record: { staff_id: string; status: string }) => [
+          record.staff_id,
           record.status as StaffAttendanceStatus,
         ])
       );
 
-      const nextStaff = (staffRes.data ?? [])
-        .map((member: { id: string; full_name: string | null; role: string }) => ({
+      const nextStaff = (staffRes.data ?? []).map(
+        (member: { id: string; full_name: string | null; role: string }) => ({
           id: member.id,
           full_name: member.full_name,
           role: member.role,
           attendance: attendanceMap.get(member.id) ?? 'not-marked',
-        }));
+        })
+      );
 
-      console.log('[StaffAttendance] Final staff list:', nextStaff);
       setStaff(nextStaff);
     } catch (error) {
       console.error('[StaffAttendance] Error loading staff attendance:', error);
@@ -114,9 +109,10 @@ export default function StaffAttendanceScreen() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [selectedDateKey]);
+  }, [schoolId, selectedDateKey]);
 
   useEffect(() => {
+    setLoading(true);
     fetchStaffAttendance();
   }, [fetchStaffAttendance]);
 
@@ -125,32 +121,141 @@ export default function StaffAttendanceScreen() {
     fetchStaffAttendance();
   }, [fetchStaffAttendance]);
 
+  // ── Mark a single staff member (instant save, optimistic) ──────────────────
+  const handleMark = useCallback(
+    async (member: StaffRecord, status: StaffMarkStatus) => {
+      if (!user?.id) {
+        Alert.alert('Not signed in', 'Please sign in again to mark attendance.');
+        return;
+      }
+      // Tapping the already-selected status does nothing.
+      if (member.attendance === status) return;
+
+      const previous = member.attendance;
+      setStaff((prev) => prev.map((s) => (s.id === member.id ? { ...s, attendance: status } : s)));
+      setSavingId(member.id);
+
+      const { error } = await markStaffAttendance({
+        schoolId,
+        staffId: member.id,
+        date: selectedDate,
+        status,
+        markedBy: user.id,
+        source: 'manual',
+      });
+
+      setSavingId(null);
+      if (error) {
+        // Roll back optimistic change
+        setStaff((prev) => prev.map((s) => (s.id === member.id ? { ...s, attendance: previous } : s)));
+        Alert.alert('Error', mapStaffAttendanceError(error));
+      }
+    },
+    [schoolId, selectedDate, user?.id]
+  );
+
+  // ── Mark everyone present in one tap ───────────────────────────────────────
+  const handleMarkAllPresent = useCallback(() => {
+    if (!user?.id) {
+      Alert.alert('Not signed in', 'Please sign in again to mark attendance.');
+      return;
+    }
+    const unmarkedOrNot = staff.filter((s) => s.attendance !== 'present');
+    if (unmarkedOrNot.length === 0) {
+      Alert.alert('All set', 'Everyone is already marked present.');
+      return;
+    }
+
+    Alert.alert(
+      'Mark All Present',
+      `Mark all ${staff.length} staff as present for ${getDateLabel(selectedDate)}?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Mark All',
+          onPress: async () => {
+            setBulkSaving(true);
+            const snapshot = staff;
+            // Optimistic: everyone present
+            setStaff((prev) => prev.map((s) => ({ ...s, attendance: 'present' as StaffAttendanceStatus })));
+
+            const results = await Promise.all(
+              unmarkedOrNot.map((member) =>
+                markStaffAttendance({
+                  schoolId,
+                  staffId: member.id,
+                  date: selectedDate,
+                  status: 'present',
+                  markedBy: user.id!,
+                  source: 'manual',
+                })
+              )
+            );
+
+            setBulkSaving(false);
+            const failed = results.filter((r) => r.error).length;
+            if (failed > 0) {
+              setStaff(snapshot); // roll back all
+              Alert.alert('Error', `Could not mark ${failed} staff member${failed > 1 ? 's' : ''}. Please try again.`);
+            }
+          },
+        },
+      ]
+    );
+  }, [staff, schoolId, selectedDate, user?.id]);
+
   const summary = useMemo(() => {
     const total = staff.length;
-    const present = staff.filter((member) => member.attendance === 'present').length;
-    const absent = staff.filter((member) => member.attendance === 'absent').length;
-    const late = staff.filter((member) => member.attendance === 'late').length;
-    const notMarked = staff.filter((member) => member.attendance === 'not-marked').length;
+    const present = staff.filter((m) => m.attendance === 'present').length;
+    const absent = staff.filter((m) => m.attendance === 'absent').length;
+    const late = staff.filter((m) => m.attendance === 'late').length;
+    const notMarked = staff.filter((m) => m.attendance === 'not-marked').length;
     return { total, present, absent, late, notMarked };
   }, [staff]);
 
   const renderStaffItem = ({ item }: { item: StaffRecord }) => {
-    const statusStyles = getStatusStyles(item.attendance);
+    const isSaving = savingId === item.id;
     return (
       <View style={styles.staffCard}>
         <View style={styles.staffInfo}>
           <View style={styles.staffAvatar}>
             <Text style={styles.avatarText}>
-              {item.full_name ? item.full_name.split(' ').map((part) => part[0]).join('').slice(0, 2).toUpperCase() : 'NA'}
+              {item.full_name
+                ? item.full_name.split(' ').map((part) => part[0]).join('').slice(0, 2).toUpperCase()
+                : 'NA'}
             </Text>
           </View>
           <View style={styles.staffMeta}>
-            <Text style={styles.staffName}>{item.full_name ?? 'Unknown'}</Text>
+            <Text style={styles.staffName} numberOfLines={1}>{item.full_name ?? 'Unknown'}</Text>
             <Text style={styles.staffRole}>{item.role.replace(/^(.)/, (m) => m.toUpperCase())}</Text>
           </View>
         </View>
-        <View style={[styles.statusBadge, { backgroundColor: statusStyles.backgroundColor }]}> 
-          <Text style={[styles.statusText, { color: statusStyles.color }]}> {getStatusLabel(item.attendance)} </Text>
+
+        {/* P / A / L buttons */}
+        <View style={styles.markGroup}>
+          {isSaving ? (
+            <ActivityIndicator size="small" color={COLORS.primary} style={{ width: 108 }} />
+          ) : (
+            MARK_OPTIONS.map((opt) => {
+              const active = item.attendance === opt.status;
+              return (
+                <TouchableOpacity
+                  key={opt.status}
+                  style={[
+                    styles.markBtn,
+                    { borderColor: opt.color },
+                    active && { backgroundColor: opt.color },
+                  ]}
+                  onPress={() => handleMark(item, opt.status)}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[styles.markBtnText, { color: active ? COLORS.white : opt.color }]}>
+                    {opt.label}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })
+          )}
         </View>
       </View>
     );
@@ -174,15 +279,34 @@ export default function StaffAttendanceScreen() {
         </TouchableOpacity>
         <View style={styles.headerCenter}>
           <Text style={styles.headerTitle}>Staff Attendance</Text>
-          <Text style={styles.headerSubtitle}>{getDateLabel(selectedDate)}</Text>
         </View>
+        <View style={{ width: 44 }} />
+      </View>
+
+      {/* Date navigation */}
+      <View style={styles.dateNav}>
+        <TouchableOpacity
+          style={styles.dateNavBtn}
+          onPress={() => setSelectedDate((d) => addDays(d, -1))}
+          activeOpacity={0.7}
+        >
+          <Ionicons name="chevron-back" size={20} color={COLORS.primary} />
+        </TouchableOpacity>
+        <View style={styles.dateNavCenter}>
+          <Text style={styles.dateNavText}>{getDateLabel(selectedDate)}</Text>
+          {isToday && <Text style={styles.dateNavToday}>Today</Text>}
+        </View>
+        <TouchableOpacity
+          style={[styles.dateNavBtn, isToday && styles.dateNavBtnDisabled]}
+          onPress={() => !isToday && setSelectedDate((d) => addDays(d, 1))}
+          disabled={isToday}
+          activeOpacity={0.7}
+        >
+          <Ionicons name="chevron-forward" size={20} color={isToday ? COLORS.textLight : COLORS.primary} />
+        </TouchableOpacity>
       </View>
 
       <View style={styles.summaryRow}>
-        <View style={styles.summaryCard}>
-          <Text style={styles.summaryLabel}>Total Staff</Text>
-          <Text style={styles.summaryValue}>{summary.total}</Text>
-        </View>
         <View style={styles.summaryCard}>
           <Text style={styles.summaryLabel}>Present</Text>
           <Text style={[styles.summaryValue, { color: COLORS.success }]}>{summary.present}</Text>
@@ -191,7 +315,34 @@ export default function StaffAttendanceScreen() {
           <Text style={styles.summaryLabel}>Absent</Text>
           <Text style={[styles.summaryValue, { color: COLORS.error }]}>{summary.absent}</Text>
         </View>
+        <View style={styles.summaryCard}>
+          <Text style={styles.summaryLabel}>Late</Text>
+          <Text style={[styles.summaryValue, { color: COLORS.warning }]}>{summary.late}</Text>
+        </View>
+        <View style={styles.summaryCard}>
+          <Text style={styles.summaryLabel}>Pending</Text>
+          <Text style={[styles.summaryValue, { color: COLORS.textSecondary }]}>{summary.notMarked}</Text>
+        </View>
       </View>
+
+      {/* Mark All Present */}
+      {staff.length > 0 && (
+        <TouchableOpacity
+          style={[styles.markAllBtn, bulkSaving && { opacity: 0.6 }]}
+          onPress={handleMarkAllPresent}
+          disabled={bulkSaving}
+          activeOpacity={0.85}
+        >
+          {bulkSaving ? (
+            <ActivityIndicator size="small" color={COLORS.white} />
+          ) : (
+            <>
+              <Ionicons name="checkmark-done" size={18} color={COLORS.white} />
+              <Text style={styles.markAllText}>Mark All Present</Text>
+            </>
+          )}
+        </TouchableOpacity>
+      )}
 
       <FlatList
         data={staff}
@@ -229,7 +380,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: 20,
     paddingTop: 16,
-    paddingBottom: 16,
+    paddingBottom: 12,
   },
   backButton: {
     width: 44,
@@ -251,23 +402,65 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: COLORS.textPrimary,
   },
-  headerSubtitle: {
-    marginTop: 2,
-    fontSize: 12,
-    color: COLORS.textSecondary,
+
+  // Date nav
+  dateNav: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginHorizontal: 20,
+    marginBottom: 12,
+    backgroundColor: COLORS.white,
+    borderRadius: 16,
+    paddingHorizontal: 8,
+    paddingVertical: 8,
+    shadowColor: COLORS.primary,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    elevation: 2,
   },
+  dateNavBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    backgroundColor: COLORS.primarySoft,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  dateNavBtnDisabled: {
+    backgroundColor: COLORS.lightGray,
+  },
+  dateNavCenter: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  dateNavText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: COLORS.textPrimary,
+  },
+  dateNavToday: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: COLORS.primary,
+    marginTop: 1,
+  },
+
   summaryRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    gap: 12,
+    gap: 8,
     paddingHorizontal: 20,
     marginBottom: 12,
   },
   summaryCard: {
     flex: 1,
     backgroundColor: COLORS.white,
-    borderRadius: 18,
-    padding: 16,
+    borderRadius: 16,
+    paddingVertical: 12,
+    paddingHorizontal: 6,
+    alignItems: 'center',
     shadowColor: COLORS.primary,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.08,
@@ -275,18 +468,37 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
   summaryLabel: {
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: '700',
     color: COLORS.textSecondary,
     textTransform: 'uppercase',
-    letterSpacing: 0.5,
+    letterSpacing: 0.3,
   },
   summaryValue: {
-    marginTop: 8,
-    fontSize: 22,
+    marginTop: 6,
+    fontSize: 20,
     fontWeight: '800',
     color: COLORS.textPrimary,
   },
+
+  // Mark all
+  markAllBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    marginHorizontal: 20,
+    marginBottom: 12,
+    backgroundColor: COLORS.success,
+    borderRadius: 14,
+    paddingVertical: 13,
+  },
+  markAllText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: COLORS.white,
+  },
+
   listContent: {
     paddingHorizontal: 20,
     paddingBottom: 20,
@@ -295,10 +507,11 @@ const styles = StyleSheet.create({
   staffCard: {
     backgroundColor: COLORS.white,
     borderRadius: 20,
-    padding: 16,
+    padding: 14,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    gap: 10,
     shadowColor: COLORS.primary,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.08,
@@ -312,15 +525,15 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   staffAvatar: {
-    width: 48,
-    height: 48,
-    borderRadius: 16,
+    width: 44,
+    height: 44,
+    borderRadius: 14,
     backgroundColor: COLORS.primarySoft,
     justifyContent: 'center',
     alignItems: 'center',
   },
   avatarText: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '700',
     color: COLORS.primary,
   },
@@ -328,26 +541,35 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   staffName: {
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: '700',
     color: COLORS.textPrimary,
   },
   staffRole: {
     marginTop: 2,
-    fontSize: 13,
+    fontSize: 12,
     color: COLORS.textSecondary,
   },
-  statusBadge: {
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    borderRadius: 14,
-    minWidth: 96,
+
+  // Mark buttons
+  markGroup: {
+    flexDirection: 'row',
+    gap: 6,
+  },
+  markBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    borderWidth: 1.5,
+    justifyContent: 'center',
     alignItems: 'center',
+    backgroundColor: COLORS.white,
   },
-  statusText: {
-    fontSize: 12,
-    fontWeight: '700',
+  markBtnText: {
+    fontSize: 13,
+    fontWeight: '800',
   },
+
   emptyState: {
     marginTop: 48,
     alignItems: 'center',

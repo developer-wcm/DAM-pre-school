@@ -1,10 +1,12 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
   Modal,
+  PermissionsAndroid,
+  Platform,
   ScrollView,
   StyleSheet,
   Switch,
@@ -14,8 +16,11 @@ import {
   View,
 } from 'react-native';
 import { COLORS } from '../../constants/admissionTheme';
+import { DEFAULT_SCHOOL_ID } from '../../constants/school';
 import { useAuth } from '../../context/auth';
+import { isLateAtCutoff, markStaffAttendance } from '../../lib/staffAttendance';
 import { supabase } from '../../lib/supabase';
+import { getWifiState, ssidMatches } from '../../lib/wifiCheckIn';
 
 interface TeacherProfile {
   id: string;
@@ -24,6 +29,14 @@ interface TeacherProfile {
   employee_id: string | null;
   assigned_class: string | null;
   role: string;
+  school_id: string | null;
+}
+
+type CheckInStatus = 'present' | 'late' | null;
+
+function todayKey() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
 function getInitials(name: string | null) {
@@ -38,6 +51,13 @@ export default function TeacherProfileScreen() {
   const [loading, setLoading] = useState(true);
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
 
+  // WiFi auto check-in state
+  const [schoolWifiName, setSchoolWifiName] = useState('');
+  const [attendanceCutoff, setAttendanceCutoff] = useState('09:30');
+  const [checkInStatus, setCheckInStatus] = useState<CheckInStatus>(null);
+  const [wifiBusy, setWifiBusy] = useState(false);
+  const [wifiMessage, setWifiMessage] = useState<string | null>(null);
+
   // Change password modal
   const [pwdModalVisible, setPwdModalVisible] = useState(false);
   const [newPassword, setNewPassword] = useState('');
@@ -46,24 +66,166 @@ export default function TeacherProfileScreen() {
   const [showNew, setShowNew] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
 
-  useEffect(() => { loadProfile(); }, []);
-
   async function loadProfile() {
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
       const { data } = await supabase
         .from('profiles')
-        .select('id, full_name, email, employee_id, assigned_class, role')
+        .select('id, full_name, email, employee_id, assigned_class, role, school_id')
         .eq('id', user.id)
         .single();
       setProfile(data);
+
+      const schoolId = data?.school_id ?? DEFAULT_SCHOOL_ID;
+
+      // Load school WiFi config + today's existing attendance in parallel.
+      const [settingsRes, attendanceRes] = await Promise.all([
+        supabase
+          .from('school_settings')
+          .select('staff_wifi_name, attendance_cutoff_time')
+          .eq('school_id', schoolId)
+          .single(),
+        supabase
+          .from('staff_attendance')
+          .select('status')
+          .eq('school_id', schoolId)
+          .eq('staff_id', user.id)
+          .eq('date', todayKey())
+          .maybeSingle(),
+      ]);
+
+      if (settingsRes.data) {
+        setSchoolWifiName(settingsRes.data.staff_wifi_name ?? '');
+        setAttendanceCutoff(settingsRes.data.attendance_cutoff_time ?? '09:30');
+      }
+      const existing = attendanceRes.data?.status;
+      if (existing === 'present' || existing === 'late') {
+        setCheckInStatus(existing);
+      }
     } catch (e) {
       console.error('Profile load error:', e);
     } finally {
       setLoading(false);
     }
   }
+
+  // ── WiFi auto check-in ────────────────────────────────────────────────────
+  const attemptCheckIn = useCallback(
+    async (manual: boolean) => {
+      if (!profile?.id) return;
+      const schoolId = profile.school_id ?? DEFAULT_SCHOOL_ID;
+
+      if (!schoolWifiName.trim()) {
+        if (manual) Alert.alert('Not enabled', 'Your school has not set up WiFi check-in yet.');
+        return;
+      }
+      if (checkInStatus) {
+        if (manual) Alert.alert('Already checked in', `You are marked ${checkInStatus} for today.`);
+        return;
+      }
+
+      setWifiBusy(true);
+      setWifiMessage(null);
+
+      // Android requires Location permission + location services to read SSID.
+      // Silent attempts only proceed if permission is already granted — we never
+      // pop the permission dialog unprompted. The manual button may request it.
+      if (Platform.OS === 'android') {
+        try {
+          const already = await PermissionsAndroid.check(
+            PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION
+          );
+          if (!already) {
+            if (!manual) {
+              // Stay quiet — leave the "Check In" button for the teacher to tap.
+              setWifiBusy(false);
+              return;
+            }
+            const granted = await PermissionsAndroid.request(
+              PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
+              {
+                title: 'Location access',
+                message: 'Location access is needed to detect the school WiFi network for attendance.',
+                buttonPositive: 'Allow',
+                buttonNegative: 'Cancel',
+              }
+            );
+            if (granted !== PermissionsAndroid.RESULTS.GRANTED) {
+              setWifiBusy(false);
+              setWifiMessage('Location permission is required to detect WiFi.');
+              Alert.alert('Permission needed', 'Please allow location access to use WiFi check-in.');
+              return;
+            }
+          }
+        } catch {
+          setWifiBusy(false);
+          return;
+        }
+      }
+
+      const { ssid, isWifi } = await getWifiState();
+
+      if (!isWifi) {
+        setWifiBusy(false);
+        setWifiMessage('Not connected to WiFi. Connect to the school network to check in.');
+        if (manual) Alert.alert('No WiFi', 'Please connect to the school WiFi network first.');
+        return;
+      }
+
+      if (!ssidMatches(ssid, schoolWifiName)) {
+        setWifiBusy(false);
+        setWifiMessage(`Connect to "${schoolWifiName}" to check in automatically.`);
+        if (manual) {
+          Alert.alert(
+            'Wrong network',
+            `You're connected to "${ssid ?? 'an unknown network'}".\nConnect to "${schoolWifiName}" to check in.`
+          );
+        }
+        return;
+      }
+
+      // Matched — mark present or late based on the cutoff time.
+      const late = isLateAtCutoff(attendanceCutoff);
+      const status = late ? 'late' : 'present';
+      const { error } = await markStaffAttendance({
+        schoolId,
+        staffId: profile.id,
+        date: new Date(),
+        status,
+        markedBy: profile.id,
+        source: 'wifi',
+      });
+
+      setWifiBusy(false);
+      if (error) {
+        setWifiMessage('Could not save check-in. Please try again.');
+        if (manual) Alert.alert('Error', 'Could not save your check-in. Please try again.');
+      } else {
+        setCheckInStatus(status);
+        setWifiMessage(null);
+        if (manual) {
+          Alert.alert(
+            status === 'late' ? 'Checked in (Late)' : 'Checked in ✓',
+            status === 'late'
+              ? 'You arrived after the cutoff, so you were marked late.'
+              : 'You have been marked present for today.'
+          );
+        }
+      }
+    },
+    [profile?.id, profile?.school_id, schoolWifiName, attendanceCutoff, checkInStatus]
+  );
+
+  useEffect(() => { loadProfile(); }, []);
+
+  // Auto-attempt a silent check-in once settings are loaded and not yet marked.
+  useEffect(() => {
+    if (!loading && profile?.id && schoolWifiName.trim() && !checkInStatus) {
+      attemptCheckIn(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, profile?.id, schoolWifiName]);
 
   async function handleChangePassword() {
     if (!newPassword.trim()) {
@@ -116,6 +278,61 @@ export default function TeacherProfileScreen() {
             {profile?.assigned_class ? ` • Class ${profile.assigned_class}` : ' • No class assigned'}
           </Text>
         </View>
+
+        {/* Today's Check-In */}
+        {schoolWifiName.trim().length > 0 && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>TODAY&apos;S ATTENDANCE</Text>
+            {checkInStatus ? (
+              <View style={[
+                styles.checkInCard,
+                { backgroundColor: checkInStatus === 'late' ? COLORS.warningLight : COLORS.successLight },
+              ]}>
+                <View style={[
+                  styles.checkInIcon,
+                  { backgroundColor: checkInStatus === 'late' ? COLORS.warning : COLORS.success },
+                ]}>
+                  <Ionicons
+                    name={checkInStatus === 'late' ? 'time' : 'checkmark'}
+                    size={22}
+                    color={COLORS.white}
+                  />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[
+                    styles.checkInTitle,
+                    { color: checkInStatus === 'late' ? COLORS.warning : COLORS.success },
+                  ]}>
+                    {checkInStatus === 'late' ? 'Checked in — Late' : 'Checked in — Present'}
+                  </Text>
+                  <Text style={styles.checkInSub}>You&apos;re marked for today via school WiFi.</Text>
+                </View>
+              </View>
+            ) : (
+              <View style={styles.checkInCard}>
+                <View style={[styles.checkInIcon, { backgroundColor: COLORS.primary }]}>
+                  <Ionicons name="wifi" size={22} color={COLORS.white} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.checkInTitle}>Check in for today</Text>
+                  <Text style={styles.checkInSub}>
+                    {wifiMessage ?? 'Connect to the school WiFi to be marked present automatically.'}
+                  </Text>
+                </View>
+                <TouchableOpacity
+                  style={[styles.checkInBtn, wifiBusy && { opacity: 0.6 }]}
+                  onPress={() => attemptCheckIn(true)}
+                  disabled={wifiBusy}
+                  activeOpacity={0.85}
+                >
+                  {wifiBusy
+                    ? <ActivityIndicator size="small" color={COLORS.white} />
+                    : <Text style={styles.checkInBtnText}>Check In</Text>}
+                </TouchableOpacity>
+              </View>
+            )}
+          </View>
+        )}
 
         {/* Assigned Class */}
         <View style={styles.section}>
@@ -336,6 +553,24 @@ const styles = StyleSheet.create({
     shadowColor: COLORS.primary, shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.06, shadowRadius: 8, elevation: 2,
   },
+
+  // Check-in card
+  checkInCard: {
+    flexDirection: 'row', alignItems: 'center', gap: 12, padding: 16,
+    backgroundColor: COLORS.white, borderRadius: 16,
+    shadowColor: COLORS.primary, shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06, shadowRadius: 8, elevation: 2,
+  },
+  checkInIcon: {
+    width: 44, height: 44, borderRadius: 14, justifyContent: 'center', alignItems: 'center',
+  },
+  checkInTitle: { fontSize: 15, fontWeight: '700', color: COLORS.textPrimary },
+  checkInSub: { fontSize: 12, color: COLORS.textSecondary, marginTop: 2, lineHeight: 16 },
+  checkInBtn: {
+    backgroundColor: COLORS.primary, borderRadius: 12, paddingHorizontal: 16, paddingVertical: 10,
+    justifyContent: 'center', alignItems: 'center', minWidth: 84,
+  },
+  checkInBtnText: { fontSize: 14, fontWeight: '700', color: COLORS.white },
 
   classRow: { flexDirection: 'row', alignItems: 'center', padding: 16, gap: 14 },
   classBadge: {
