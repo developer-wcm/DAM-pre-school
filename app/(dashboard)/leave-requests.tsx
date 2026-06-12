@@ -325,14 +325,14 @@ export default function LeaveRequestsScreen() {
         onSuccess={(staffName, staffRole) => {
           setShowAddModal(false);
           fetchRequests();
-          // Determine which JotForm to open based on staff role
+          // Determine which form to open based on staff role
           const formKey: JotFormKey =
             staffRole === 'teacher' || staffRole === 'principal'
               ? 'TEACHER_LEAVE'
               : 'TEACHER_LEAVE'; // use same key until parent form is separate
           Alert.alert(
             'Request Submitted ✓',
-            'Your leave request has been recorded. Please also fill the required JotForm to complete the process.',
+            'Your leave request has been recorded. Please also fill the Google Form to complete the process.',
             [
               { text: 'Later', style: 'cancel' },
               {

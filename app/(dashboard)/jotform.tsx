@@ -1,14 +1,4 @@
-﻿/**
- * JotForm WebView Screen
- * ─────────────────────
- * Opened after a teacher or parent submits a leave / absence request.
- *
- * Navigation params:
- *   formKey   – key from JOTFORMS constant  (e.g. "TEACHER_LEAVE")
- *   userName  – pre-filled name shown in the header
- *   role      – "teacher" | "parent"
- */
-
+﻿
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useRef, useState } from 'react';
@@ -25,10 +15,6 @@ import { WebView, WebViewNavigation } from 'react-native-webview';
 import { JOTFORMS, JotFormKey } from '../../constants/jotforms';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
-
-function isPlaceholderUrl(url: string) {
-  return url.includes('YOUR_') || url.includes('FORM_ID');
-}
 
 function getRoleLabel(role: string) {
   if (role === 'teacher' || role === 'principal') return 'Staff Leave Form';
@@ -55,7 +41,6 @@ export default function JotFormScreen() {
   const role = params.role ?? 'teacher';
 
   const formUrl = JOTFORMS[formKey];
-  const placeholder = isPlaceholderUrl(formUrl);
 
   const webviewRef = useRef<WebView>(null);
   const [loading, setLoading] = useState(true);
@@ -66,15 +51,10 @@ export default function JotFormScreen() {
   const accentColor = getRoleColor(role);
   const title = getRoleLabel(role);
 
-  // Detect JotForm "Thank You" page → show success state
+  // Google Forms shows a "formResponse" page after submission
   function handleNavChange(nav: WebViewNavigation) {
     const url = nav.url ?? '';
-    if (
-      url.includes('formResponse') ||
-      url.includes('thankyou') ||
-      url.includes('thank-you') ||
-      url.includes('submission')
-    ) {
+    if (url.includes('formResponse')) {
       setSubmitted(true);
     }
   }
@@ -124,10 +104,7 @@ export default function JotFormScreen() {
         </View>
       )}
 
-      {/* ── Placeholder notice ── */}
-      {placeholder ? (
-        <PlaceholderView formKey={formKey} accentColor={accentColor} onBack={() => router.navigate('/(dashboard)/more')} />
-      ) : submitted ? (
+      {submitted ? (
         <SuccessView accentColor={accentColor} onDone={() => router.navigate('/(dashboard)/more')} />
       ) : error ? (
         <ErrorView
@@ -201,33 +178,6 @@ function ErrorView({ onRetry, onBack }: { onRetry: () => void; onBack: () => voi
   );
 }
 
-function PlaceholderView({ formKey, accentColor, onBack }: {
-  formKey: string; accentColor: string; onBack: () => void;
-}) {
-  return (
-    <View style={styles.centeredView}>
-      <View style={[styles.successIcon, { backgroundColor: '#FFF0D4' }]}>
-        <Ionicons name="link-outline" size={48} color="#E8A020" />
-      </View>
-      <Text style={styles.successTitle}>JotForm Not Connected</Text>
-      <Text style={styles.successText}>
-        Open <Text style={{ fontWeight: '800' }}>constants/jotforms.ts</Text> and replace the
-        placeholder URL for{' '}
-        <Text style={{ fontWeight: '800', color: accentColor }}>{formKey}</Text> with your
-        real JotForm link.
-      </Text>
-      <View style={styles.codeBlock}>
-        <Text style={styles.codeText}>
-          {`JOTFORMS.${formKey} =\n'https://form.jotform.com/YOUR_ID'`}
-        </Text>
-      </View>
-      <TouchableOpacity style={[styles.doneBtn, { backgroundColor: '#E8A020' }]} onPress={onBack} activeOpacity={0.85}>
-        <Text style={styles.doneBtnText}>Go Back</Text>
-      </TouchableOpacity>
-    </View>
-  );
-}
-
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
@@ -297,10 +247,4 @@ const styles = StyleSheet.create({
   },
   backBtnText: { fontSize: 14, fontWeight: '700', color: '#5A5A7A' },
 
-  codeBlock: {
-    backgroundColor: '#1A1A2E', borderRadius: 12,
-    paddingHorizontal: 18, paddingVertical: 14,
-    alignSelf: 'stretch',
-  },
-  codeText: { fontFamily: Platform.OS === 'ios' ? 'Courier New' : 'monospace', fontSize: 13, color: '#E8A020' },
 });
