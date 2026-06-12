@@ -1,3 +1,4 @@
+import Constants from 'expo-constants'
 import * as Device from 'expo-device'
 import * as Notifications from 'expo-notifications'
 import { useEffect, useRef } from 'react'
@@ -6,13 +7,20 @@ import { supabase } from '../lib/supabase'
 
 const EAS_PROJECT_ID = '2af89656-d00c-4120-aacf-5e9c24c773b3'
 
-Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowAlert: true,
-    shouldPlaySound: true,
-    shouldSetBadge: true,
-  }),
-})
+// expo-notifications remote push was removed from Expo Go in SDK 53; skip setup there
+const isExpoGo = Constants.appOwnership === 'expo'
+
+if (!isExpoGo) {
+  Notifications.setNotificationHandler({
+    handleNotification: async () => ({
+      shouldShowAlert: true,
+      shouldShowBanner: true,
+      shouldShowList: true,
+      shouldPlaySound: true,
+      shouldSetBadge: true,
+    }),
+  })
+}
 
 async function getExpoPushToken(): Promise<string | null> {
   if (!Device.isDevice) return null
@@ -53,7 +61,7 @@ export function usePushNotifications(
   const responseListener = useRef<Notifications.EventSubscription | null>(null)
 
   useEffect(() => {
-    if (!userId) return
+    if (!userId || isExpoGo) return
 
     getExpoPushToken().then(async (token) => {
       if (!token) return

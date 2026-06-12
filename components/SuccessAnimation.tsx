@@ -19,15 +19,15 @@ export function SuccessAnimation({
   const animationRef = useRef<LottieView>(null);
 
   useEffect(() => {
-    if (visible) {
-      animationRef.current?.play();
+    if (!visible) return;
 
-      const timer = setTimeout(() => {
-        onComplete?.();
-      }, duration);
+    animationRef.current?.play();
 
-      return () => clearTimeout(timer);
-    }
+    const timer = setTimeout(() => {
+      onComplete?.();
+    }, duration);
+
+    return () => clearTimeout(timer);
   }, [visible, duration, onComplete]);
 
   if (!visible) return null;
@@ -58,13 +58,13 @@ export function SimpleSuccessAnimation({
   duration = 2000,
 }: SuccessAnimationProps) {
   useEffect(() => {
-    if (visible) {
-      const timer = setTimeout(() => {
-        onComplete?.();
-      }, duration);
+    if (!visible) return;
 
-      return () => clearTimeout(timer);
-    }
+    const timer = setTimeout(() => {
+      onComplete?.();
+    }, duration);
+
+    return () => clearTimeout(timer);
   }, [visible, duration, onComplete]);
 
   if (!visible) return null;

@@ -34,6 +34,13 @@
   "exclude": [
     "node_modules",
     "dist",
-    "build"
+    "build",
+    "supabase/functions",
+    "components/ui/collapsible.tsx",
+    "hooks/use-theme-color.ts",
+    "components/themed-text.tsx",
+    "components/themed-view.tsx",
+    "components/parallax-scroll-view.tsx",
+    "app/modal.tsx"
   ]
 }
