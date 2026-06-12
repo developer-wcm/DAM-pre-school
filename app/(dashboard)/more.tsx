@@ -42,6 +42,15 @@ const MENU_ITEMS = [
     badge: false,
   },
   {
+    id: 'staff-attendance-report',
+    icon: 'bar-chart' as const,
+    label: 'Staff\nReport',
+    sub: 'Monthly Summary',
+    bg: '#D0F5EE',
+    iconColor: '#2A9D6E',
+    badge: false,
+  },
+  {
     id: 'student-progress',
     icon: 'trending-up' as const,
     label: 'Student\nProgress',
@@ -107,7 +116,8 @@ const MENU_ITEMS = [
 ];
 
 const ROUTE_MAP = {
-  'staff-attendance':  '/(dashboard)/staff-attendance',
+  'staff-attendance':         '/(dashboard)/staff-attendance',
+  'staff-attendance-report':  '/(dashboard)/staff-attendance-report',
   'staff-management':  '/(dashboard)/staff-management',
   'events-calendar':   '/(dashboard)/events-calendar',
   'student-progress':  '/(dashboard)/student-progress',

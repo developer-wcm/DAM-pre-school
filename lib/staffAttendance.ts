@@ -33,6 +33,7 @@ export async function markStaffAttendance(
       status,
       marked_by: markedBy,
       notes: source === 'wifi' ? 'Auto check-in (WiFi)' : null,
+      marked_at: new Date().toISOString(),
     },
     { onConflict: 'staff_id,date' }
   );

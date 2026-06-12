@@ -21,7 +21,14 @@ function normalize(name: string | null | undefined): string {
 /** Reads the current WiFi connection state. */
 export async function getWifiState(): Promise<WifiState> {
   try {
-    const state = await NetInfo.fetch('wifi');
+    // Guard against the native call hanging (e.g. module not linked in a stale
+    // build) — never let the UI spinner spin forever.
+    const state = await Promise.race([
+      NetInfo.fetch('wifi'),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('wifi-timeout')), 8000)
+      ),
+    ]);
     const isWifi = state.type === 'wifi' && !!state.isConnected;
     const ssid =
       isWifi && state.details && 'ssid' in state.details

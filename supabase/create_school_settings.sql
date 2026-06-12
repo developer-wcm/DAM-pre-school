@@ -42,6 +42,18 @@ create policy "Admin can manage school settings"
     )
   );
 
+-- Any signed-in member of the school can READ settings (teachers need the
+-- staff WiFi name for auto check-in). Writes stay restricted to admin/principal.
+drop policy if exists "school members can view settings" on public.school_settings;
+create policy "school members can view settings"
+  on public.school_settings
+  for select
+  using (
+    school_id in (
+      select school_id from public.profiles where id = auth.uid()
+    )
+  );
+
 -- Seed default row for DEMO01
 insert into public.school_settings (school_id, school_name)
 values ('DEMO01', 'DAM PreSchool')

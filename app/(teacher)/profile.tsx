@@ -39,6 +39,14 @@ function todayKey() {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
+/** Format an ISO timestamp (or Date) as a short local time like "9:42 AM". */
+function formatTime(value: string | Date | null): string | null {
+  if (!value) return null;
+  const d = typeof value === 'string' ? new Date(value) : value;
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', hour12: true });
+}
+
 function getInitials(name: string | null) {
   if (!name) return '?';
   return name.split(' ').map((n) => n[0]).slice(0, 2).join('').toUpperCase();
@@ -55,6 +63,7 @@ export default function TeacherProfileScreen() {
   const [schoolWifiName, setSchoolWifiName] = useState('');
   const [attendanceCutoff, setAttendanceCutoff] = useState('09:30');
   const [checkInStatus, setCheckInStatus] = useState<CheckInStatus>(null);
+  const [checkInTime, setCheckInTime] = useState<string | null>(null);
   const [wifiBusy, setWifiBusy] = useState(false);
   const [wifiMessage, setWifiMessage] = useState<string | null>(null);
 
@@ -88,7 +97,7 @@ export default function TeacherProfileScreen() {
           .single(),
         supabase
           .from('staff_attendance')
-          .select('status')
+          .select('status, marked_at')
           .eq('school_id', schoolId)
           .eq('staff_id', user.id)
           .eq('date', todayKey())
@@ -102,6 +111,7 @@ export default function TeacherProfileScreen() {
       const existing = attendanceRes.data?.status;
       if (existing === 'present' || existing === 'late') {
         setCheckInStatus(existing);
+        setCheckInTime(formatTime(attendanceRes.data?.marked_at ?? null));
       }
     } catch (e) {
       console.error('Profile load error:', e);
@@ -203,6 +213,7 @@ export default function TeacherProfileScreen() {
         if (manual) Alert.alert('Error', 'Could not save your check-in. Please try again.');
       } else {
         setCheckInStatus(status);
+        setCheckInTime(formatTime(new Date()));
         setWifiMessage(null);
         if (manual) {
           Alert.alert(
@@ -224,8 +235,7 @@ export default function TeacherProfileScreen() {
     if (!loading && profile?.id && schoolWifiName.trim() && !checkInStatus) {
       attemptCheckIn(false);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loading, profile?.id, schoolWifiName]);
+  }, [loading, profile?.id, schoolWifiName, checkInStatus, attemptCheckIn]);
 
   async function handleChangePassword() {
     if (!newPassword.trim()) {
@@ -279,61 +289,6 @@ export default function TeacherProfileScreen() {
           </Text>
         </View>
 
-        {/* Today's Check-In */}
-        {schoolWifiName.trim().length > 0 && (
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>TODAY&apos;S ATTENDANCE</Text>
-            {checkInStatus ? (
-              <View style={[
-                styles.checkInCard,
-                { backgroundColor: checkInStatus === 'late' ? COLORS.warningLight : COLORS.successLight },
-              ]}>
-                <View style={[
-                  styles.checkInIcon,
-                  { backgroundColor: checkInStatus === 'late' ? COLORS.warning : COLORS.success },
-                ]}>
-                  <Ionicons
-                    name={checkInStatus === 'late' ? 'time' : 'checkmark'}
-                    size={22}
-                    color={COLORS.white}
-                  />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={[
-                    styles.checkInTitle,
-                    { color: checkInStatus === 'late' ? COLORS.warning : COLORS.success },
-                  ]}>
-                    {checkInStatus === 'late' ? 'Checked in — Late' : 'Checked in — Present'}
-                  </Text>
-                  <Text style={styles.checkInSub}>You&apos;re marked for today via school WiFi.</Text>
-                </View>
-              </View>
-            ) : (
-              <View style={styles.checkInCard}>
-                <View style={[styles.checkInIcon, { backgroundColor: COLORS.primary }]}>
-                  <Ionicons name="wifi" size={22} color={COLORS.white} />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.checkInTitle}>Check in for today</Text>
-                  <Text style={styles.checkInSub}>
-                    {wifiMessage ?? 'Connect to the school WiFi to be marked present automatically.'}
-                  </Text>
-                </View>
-                <TouchableOpacity
-                  style={[styles.checkInBtn, wifiBusy && { opacity: 0.6 }]}
-                  onPress={() => attemptCheckIn(true)}
-                  disabled={wifiBusy}
-                  activeOpacity={0.85}
-                >
-                  {wifiBusy
-                    ? <ActivityIndicator size="small" color={COLORS.white} />
-                    : <Text style={styles.checkInBtnText}>Check In</Text>}
-                </TouchableOpacity>
-              </View>
-            )}
-          </View>
-        )}
-
         {/* Assigned Class */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>ASSIGNED CLASS</Text>
@@ -381,6 +336,56 @@ export default function TeacherProfileScreen() {
                 <Text style={styles.infoValue}>{profile?.employee_id ?? '—'}</Text>
               </View>
             </View>
+
+            {/* Today's Attendance (WiFi check-in) */}
+            <View style={styles.infoDivider} />
+            <View style={styles.infoRow}>
+              <View style={[
+                styles.infoIcon,
+                {
+                  backgroundColor: checkInStatus === 'present' ? COLORS.successLight
+                    : checkInStatus === 'late' ? COLORS.warningLight
+                    : COLORS.primarySoft,
+                },
+              ]}>
+                <Ionicons
+                  name={checkInStatus === 'present' ? 'checkmark-circle'
+                    : checkInStatus === 'late' ? 'time' : 'wifi'}
+                  size={16}
+                  color={checkInStatus === 'present' ? COLORS.success
+                    : checkInStatus === 'late' ? COLORS.warning : COLORS.primary}
+                />
+              </View>
+              <View style={styles.infoContent}>
+                <Text style={styles.infoLabel}>Today&apos;s Attendance</Text>
+                {checkInStatus ? (
+                  <Text style={[
+                    styles.infoValue,
+                    { color: checkInStatus === 'late' ? COLORS.warning : COLORS.success },
+                  ]}>
+                    {checkInStatus === 'late' ? 'Checked in — Late' : 'Checked in — Present'}
+                    {checkInTime ? ` · ${checkInTime}` : ''}
+                  </Text>
+                ) : (
+                  <Text style={styles.infoValue}>Not checked in</Text>
+                )}
+              </View>
+              {!checkInStatus && (
+                <TouchableOpacity
+                  style={[styles.checkInBtn, wifiBusy && { opacity: 0.6 }]}
+                  onPress={() => attemptCheckIn(true)}
+                  disabled={wifiBusy}
+                  activeOpacity={0.85}
+                >
+                  {wifiBusy
+                    ? <ActivityIndicator size="small" color={COLORS.white} />
+                    : <Text style={styles.checkInBtnText}>Check In</Text>}
+                </TouchableOpacity>
+              )}
+            </View>
+            {!checkInStatus && wifiMessage && (
+              <Text style={styles.checkInHint}>{wifiMessage}</Text>
+            )}
           </View>
         </View>
 
@@ -567,10 +572,13 @@ const styles = StyleSheet.create({
   checkInTitle: { fontSize: 15, fontWeight: '700', color: COLORS.textPrimary },
   checkInSub: { fontSize: 12, color: COLORS.textSecondary, marginTop: 2, lineHeight: 16 },
   checkInBtn: {
-    backgroundColor: COLORS.primary, borderRadius: 12, paddingHorizontal: 16, paddingVertical: 10,
-    justifyContent: 'center', alignItems: 'center', minWidth: 84,
+    backgroundColor: COLORS.primary, borderRadius: 10, paddingHorizontal: 14, paddingVertical: 8,
+    justifyContent: 'center', alignItems: 'center', minWidth: 72,
   },
-  checkInBtnText: { fontSize: 14, fontWeight: '700', color: COLORS.white },
+  checkInBtnText: { fontSize: 13, fontWeight: '700', color: COLORS.white },
+  checkInHint: {
+    fontSize: 12, color: COLORS.textSecondary, marginTop: 8, marginLeft: 44, lineHeight: 16,
+  },
 
   classRow: { flexDirection: 'row', alignItems: 'center', padding: 16, gap: 14 },
   classBadge: {

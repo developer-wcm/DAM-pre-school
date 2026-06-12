@@ -34,7 +34,10 @@ export default function LoginScreen() {
     }
     
     setLoading(true);
-    const { error } = await signInWithEmail(email, password);
+    // Normalize the email (trim + lowercase) so trailing spaces or an
+    // auto-capitalized first letter from another keyboard don't cause a
+    // spurious "invalid credentials" error.
+    const { error } = await signInWithEmail(email.trim().toLowerCase(), password);
     setLoading(false);
 
     if (error) {

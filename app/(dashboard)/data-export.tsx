@@ -22,7 +22,7 @@ import { supabase } from '../../lib/supabase';
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
-type CategoryId = 'students' | 'staff' | 'attendance' | 'fees';
+type CategoryId = 'students' | 'staff' | 'attendance' | 'staff_attendance' | 'fees';
 type FormatId = 'pdf' | 'excel';
 
 interface ExportCategory {
@@ -62,11 +62,19 @@ const CATEGORIES: ExportCategory[] = [
   },
   {
     id: 'attendance',
-    label: 'Attendance Reports',
-    description: 'Daily logs, tardiness summaries, and absence records.',
+    label: 'Student Attendance',
+    description: 'Daily student attendance logs, tardiness and absence records.',
     icon: 'checkmark-circle-outline',
     iconBg: '#FFF7ED',
     iconColor: AppColors.gold,
+  },
+  {
+    id: 'staff_attendance',
+    label: 'Staff Attendance',
+    description: 'Monthly staff check-in records, present, late, and absent counts.',
+    icon: 'people-circle-outline',
+    iconBg: '#D0F5EE',
+    iconColor: '#2A9D6E',
   },
   {
     id: 'fees',
@@ -208,7 +216,17 @@ export default function DataExportScreen() {
           .gte('date', startDate)
           .lte('date', endDate);
         rows = data ?? [];
-        filename = `Attendance_Report_${academicYear}`;
+        filename = `Student_Attendance_${academicYear}`;
+      } else if (selectedCategory === 'staff_attendance') {
+        const { data } = await supabase
+          .from('staff_attendance')
+          .select('id, staff_id, date, status, notes, marked_at')
+          .eq('school_id', schoolId)
+          .gte('date', startDate)
+          .lte('date', endDate)
+          .order('date', { ascending: false });
+        rows = data ?? [];
+        filename = `Staff_Attendance_${academicYear}`;
       } else if (selectedCategory === 'fees') {
         const { data } = await supabase
           .from('fee_installments')
