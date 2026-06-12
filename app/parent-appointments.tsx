@@ -1,38 +1,63 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import { useState } from 'react';
-import { ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { useCallback, useEffect, useState } from 'react';
+import { ActivityIndicator, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import ConfirmationModal from '../components/ConfirmationModal';
 import RescheduleModal from '../components/RescheduleModal';
 import { COLORS } from '../constants/admissionTheme';
+import { useAuth } from '../context/auth';
+import { supabase } from '../lib/supabase';
+
+interface Teacher {
+  id: string;
+  full_name: string;
+  role: string;
+}
 
 interface Appointment {
   id: string;
+  teacher_id: string;
   teacherName: string;
   teacherAvatar: string;
   subject: string;
-  date: string;
+  date: string;       // display string "Feb 25, 2026"
+  date_iso: string;   // YYYY-MM-DD for DB updates
   time: string;
   topic: string;
-  status: 'pending' | 'confirmed' | 'completed' | 'cancelled';
+  status: 'requested' | 'confirmed' | 'rescheduled' | 'cancelled' | 'completed';
 }
 
-const TEACHERS = [
-  { id: '1', name: 'Ms. Anjali Sharma', avatar: '👩‍🏫', subject: 'Class Teacher' },
-  { id: '2', name: 'Mr. Rajesh Kumar', avatar: '👨‍🏫', subject: 'Music Teacher' },
-  { id: '3', name: 'Ms. Priya Patel', avatar: '👩‍🏫', subject: 'Art Teacher' },
-];
+function formatDateForDisplay(isoDate: string): string {
+  const [year, month, day] = isoDate.split('-').map(Number);
+  return new Date(year, month - 1, day).toLocaleDateString('en-US', {
+    month: 'short', day: 'numeric', year: 'numeric',
+  });
+}
+
+function parseDateToISO(input: string): string | null {
+  const d = new Date(input);
+  if (isNaN(d.getTime())) return null;
+  return d.toISOString().split('T')[0];
+}
 
 export default function ParentAppointmentsScreen() {
   const router = useRouter();
+  const { user, profile } = useAuth();
+
   const [activeTab, setActiveTab] = useState<'upcoming' | 'past'>('upcoming');
   const [showBookingModal, setShowBookingModal] = useState(false);
-  const [selectedTeacher, setSelectedTeacher] = useState(TEACHERS[0]);
+  const [selectedTeacher, setSelectedTeacher] = useState<Teacher | null>(null);
   const [selectedDate, setSelectedDate] = useState('');
   const [selectedTime, setSelectedTime] = useState('');
   const [topic, setTopic] = useState('');
-  
-  // Task 6: New state management for modals
+  const [errorMessage, setErrorMessage] = useState('');
+  const [booking, setBooking] = useState(false);
+
+  const [teachers, setTeachers] = useState<Teacher[]>([]);
+  const [loadingTeachers, setLoadingTeachers] = useState(true);
+  const [appointments, setAppointments] = useState<Appointment[]>([]);
+  const [loadingAppointments, setLoadingAppointments] = useState(true);
+
   const [showConfirmationModal, setShowConfirmationModal] = useState(false);
   const [showRescheduleModal, setShowRescheduleModal] = useState(false);
   const [selectedAppointment, setSelectedAppointment] = useState<Appointment | null>(null);
@@ -43,150 +68,193 @@ export default function ParentAppointmentsScreen() {
     topic: string;
     type: 'booking' | 'reschedule';
   } | null>(null);
-  const [errorMessage, setErrorMessage] = useState('');
 
-  const appointments: Appointment[] = [
-    {
-      id: '1',
-      teacherName: 'Ms. Anjali Sharma',
-      teacherAvatar: '👩‍🏫',
-      subject: 'Class Teacher',
-      date: 'Feb 20, 2026',
-      time: '10:00 AM',
-      topic: 'Discuss academic progress',
-      status: 'confirmed',
-    },
-    {
-      id: '2',
-      teacherName: 'Mr. Rajesh Kumar',
-      teacherAvatar: '👨‍🏫',
-      subject: 'Music Teacher',
-      date: 'Feb 18, 2026',
-      time: '2:00 PM',
-      topic: 'Music class enrollment',
-      status: 'pending',
-    },
-  ];
+  // ── Fetch teachers ──────────────────────────────────────────────────────────
+  useEffect(() => {
+    if (!profile?.school_id) return;
+    supabase
+      .from('profiles')
+      .select('id, full_name, role')
+      .eq('school_id', profile.school_id)
+      .eq('role', 'teacher')
+      .then(({ data, error }) => {
+        if (!error && data && data.length > 0) {
+          setTeachers(data as Teacher[]);
+          setSelectedTeacher(data[0] as Teacher);
+        }
+        setLoadingTeachers(false);
+      });
+  }, [profile?.school_id]);
 
-  const pastAppointments: Appointment[] = [
-    {
-      id: '3',
-      teacherName: 'Ms. Anjali Sharma',
-      teacherAvatar: '👩‍🏫',
-      subject: 'Class Teacher',
-      date: 'Jan 15, 2026',
-      time: '11:00 AM',
-      topic: 'Term 1 review',
-      status: 'completed',
-    },
-  ];
+  // ── Fetch appointments ──────────────────────────────────────────────────────
+  const fetchAppointments = useCallback(async () => {
+    if (!user?.id) return;
+    setLoadingAppointments(true);
+    const { data, error } = await supabase
+      .from('appointments')
+      .select('id, teacher_id, teacher_name, date, time_slot, topic, status')
+      .eq('parent_id', user.id)
+      .order('date', { ascending: true });
 
-  const displayedAppointments = activeTab === 'upcoming' ? appointments : pastAppointments;
+    if (!error && data) {
+      setAppointments(
+        data.map((row: any) => ({
+          id: row.id,
+          teacher_id: row.teacher_id,
+          teacherName: row.teacher_name,
+          teacherAvatar: '👩‍🏫',
+          subject: 'Teacher',
+          date: formatDateForDisplay(row.date),
+          date_iso: row.date,
+          time: row.time_slot,
+          topic: row.topic,
+          status: row.status,
+        }))
+      );
+    }
+    setLoadingAppointments(false);
+  }, [user?.id]);
 
-  // Task 7: Updated handleBookAppointment function
-  const handleBookAppointment = () => {
-    if (!selectedDate || !selectedTime || !topic.trim()) {
+  useEffect(() => {
+    fetchAppointments();
+  }, [fetchAppointments]);
+
+  const upcomingAppointments = appointments.filter(
+    (a) => !['completed', 'cancelled'].includes(a.status)
+  );
+  const pastAppointments = appointments.filter(
+    (a) => ['completed', 'cancelled'].includes(a.status)
+  );
+  const displayedAppointments = activeTab === 'upcoming' ? upcomingAppointments : pastAppointments;
+
+  // ── Book appointment ────────────────────────────────────────────────────────
+  const handleBookAppointment = async () => {
+    if (!selectedTeacher || !selectedDate || !selectedTime || !topic.trim()) {
       setErrorMessage('Please fill in all fields');
       return;
     }
+    const dateISO = parseDateToISO(selectedDate);
+    if (!dateISO) {
+      setErrorMessage('Invalid date — try "Feb 25, 2026"');
+      return;
+    }
+    if (!user?.id || !profile) return;
 
-    // Close booking modal
+    setBooking(true);
+    const { error } = await supabase.from('appointments').insert({
+      school_id: profile.school_id,
+      parent_id: user.id,
+      parent_name: profile.full_name ?? '',
+      teacher_id: selectedTeacher.id,
+      teacher_name: selectedTeacher.full_name,
+      student_name: '',
+      date: dateISO,
+      time_slot: selectedTime,
+      topic: topic.trim(),
+      status: 'requested',
+    });
+    setBooking(false);
+
+    if (error) {
+      setErrorMessage(error.message);
+      return;
+    }
+
     setShowBookingModal(false);
-    
-    // Prepare confirmation data
     setConfirmationData({
-      teacherName: selectedTeacher.name,
+      teacherName: selectedTeacher.full_name,
       date: selectedDate,
       time: selectedTime,
-      topic: topic,
+      topic: topic.trim(),
       type: 'booking',
     });
-    
-    // Show confirmation modal
     setShowConfirmationModal(true);
   };
 
-  // Task 8: Reschedule handler functions
+  // ── Reschedule ──────────────────────────────────────────────────────────────
   const handleReschedulePress = (appointment: Appointment) => {
     setSelectedAppointment(appointment);
     setShowRescheduleModal(true);
   };
 
-  const handleRescheduleSubmit = (newDate: string, newTime: string, reason?: string) => {
+  const handleRescheduleSubmit = async (newDate: string, newTime: string, reason?: string) => {
     if (!selectedAppointment) return;
-    
-    // Close reschedule modal
+    const dateISO = parseDateToISO(newDate) ?? newDate;
+
+    const { error } = await supabase
+      .from('appointments')
+      .update({
+        date: dateISO,
+        time_slot: newTime,
+        status: 'rescheduled',
+        reschedule_reason: reason ?? null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', selectedAppointment.id);
+
     setShowRescheduleModal(false);
-    
-    // Prepare confirmation data
-    setConfirmationData({
-      teacherName: selectedAppointment.teacherName,
-      date: newDate,
-      time: newTime,
-      topic: selectedAppointment.topic,
-      type: 'reschedule',
-    });
-    
-    // Show confirmation modal
-    setShowConfirmationModal(true);
-    
-    // TODO: Update appointment in backend/state
-    // For now, just log the reschedule request
-    console.log('Reschedule request:', {
-      appointmentId: selectedAppointment.id,
-      newDate,
-      newTime,
-      reason,
-    });
+    if (!error) {
+      setConfirmationData({
+        teacherName: selectedAppointment.teacherName,
+        date: newDate,
+        time: newTime,
+        topic: selectedAppointment.topic,
+        type: 'reschedule',
+      });
+      setShowConfirmationModal(true);
+    }
   };
 
-  // Task 9: Confirmation modal close handler
+  // ── Confirmation close ──────────────────────────────────────────────────────
   const handleConfirmationClose = () => {
     setShowConfirmationModal(false);
-    
-    // Clear booking form if it was a booking confirmation
     if (confirmationData?.type === 'booking') {
       setSelectedDate('');
       setSelectedTime('');
       setTopic('');
     }
-    
-    // Clear selected appointment if it was a reschedule
     if (confirmationData?.type === 'reschedule') {
       setSelectedAppointment(null);
     }
-    
     setConfirmationData(null);
+    fetchAppointments();
   };
 
+  // ── Cancel appointment ──────────────────────────────────────────────────────
+  const handleCancelAppointment = async (appointmentId: string) => {
+    await supabase
+      .from('appointments')
+      .update({ status: 'cancelled', updated_at: new Date().toISOString() })
+      .eq('id', appointmentId);
+    fetchAppointments();
+  };
+
+  // ── Status helpers ──────────────────────────────────────────────────────────
   const getStatusColor = (status: string) => {
     switch (status) {
-      case 'confirmed':
-        return COLORS.success;
-      case 'pending':
-        return COLORS.warning;
-      case 'completed':
-        return COLORS.textSecondary;
-      case 'cancelled':
-        return COLORS.error;
-      default:
-        return COLORS.textSecondary;
+      case 'confirmed': return COLORS.success;
+      case 'requested': return COLORS.warning;
+      case 'rescheduled': return COLORS.warning;
+      case 'completed': return COLORS.textSecondary;
+      case 'cancelled': return COLORS.error;
+      default: return COLORS.textSecondary;
     }
   };
 
   const getStatusBg = (status: string) => {
     switch (status) {
-      case 'confirmed':
-        return COLORS.successLight;
-      case 'pending':
-        return COLORS.warningLight;
-      case 'completed':
-        return COLORS.offWhite;
-      case 'cancelled':
-        return COLORS.errorLight;
-      default:
-        return COLORS.offWhite;
+      case 'confirmed': return COLORS.successLight;
+      case 'requested': return COLORS.warningLight;
+      case 'rescheduled': return COLORS.warningLight;
+      case 'completed': return COLORS.offWhite;
+      case 'cancelled': return COLORS.errorLight;
+      default: return COLORS.offWhite;
     }
+  };
+
+  const getStatusLabel = (status: string) => {
+    if (status === 'requested') return 'Pending';
+    return status.charAt(0).toUpperCase() + status.slice(1);
   };
 
   return (
@@ -197,8 +265,8 @@ export default function ParentAppointmentsScreen() {
           <Ionicons name="chevron-back" size={24} color={COLORS.textPrimary} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>My Appointments</Text>
-        <TouchableOpacity 
-          style={styles.addButton} 
+        <TouchableOpacity
+          style={styles.addButton}
           onPress={() => setShowBookingModal(true)}
           activeOpacity={0.7}
         >
@@ -234,13 +302,15 @@ export default function ParentAppointmentsScreen() {
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-        {displayedAppointments.length === 0 ? (
+        {loadingAppointments ? (
+          <ActivityIndicator style={{ marginTop: 40 }} color={COLORS.primary} />
+        ) : displayedAppointments.length === 0 ? (
           <View style={styles.emptyState}>
             <Text style={styles.emptyEmoji}>📅</Text>
             <Text style={styles.emptyTitle}>No {activeTab} appointments</Text>
             <Text style={styles.emptySubtitle}>
               {activeTab === 'upcoming'
-                ? 'Book an appointment with your child\'s teacher'
+                ? "Book an appointment with your child's teacher"
                 : 'Your past appointments will appear here'}
             </Text>
             {activeTab === 'upcoming' && (
@@ -276,7 +346,7 @@ export default function ParentAppointmentsScreen() {
                           { color: getStatusColor(appointment.status) },
                         ]}
                       >
-                        ● {appointment.status.charAt(0).toUpperCase() + appointment.status.slice(1)}
+                        ● {getStatusLabel(appointment.status)}
                       </Text>
                     </View>
                   </View>
@@ -292,7 +362,6 @@ export default function ParentAppointmentsScreen() {
                     {appointment.date} • {appointment.time}
                   </Text>
                 </View>
-
                 <View style={styles.detailRow}>
                   <Ionicons name="chatbox-outline" size={18} color={COLORS.textSecondary} />
                   <Text style={styles.detailText}>Topic: {appointment.topic}</Text>
@@ -300,13 +369,17 @@ export default function ParentAppointmentsScreen() {
               </View>
 
               {/* Action Buttons */}
-              {appointment.status === 'pending' && (
+              {(appointment.status === 'requested' || appointment.status === 'rescheduled') && (
                 <View style={styles.actionRow}>
-                  <TouchableOpacity style={styles.cancelButton} activeOpacity={0.8}>
+                  <TouchableOpacity
+                    style={styles.cancelButton}
+                    activeOpacity={0.8}
+                    onPress={() => handleCancelAppointment(appointment.id)}
+                  >
                     <Text style={styles.cancelButtonText}>Cancel</Text>
                   </TouchableOpacity>
-                  <TouchableOpacity 
-                    style={styles.rescheduleButton} 
+                  <TouchableOpacity
+                    style={styles.rescheduleButton}
                     activeOpacity={0.8}
                     onPress={() => handleReschedulePress(appointment)}
                   >
@@ -347,28 +420,34 @@ export default function ParentAppointmentsScreen() {
               {/* Select Teacher */}
               <View style={styles.formGroup}>
                 <Text style={styles.formLabel}>Select Teacher</Text>
-                <View style={styles.teacherSelector}>
-                  {TEACHERS.map((teacher) => (
-                    <TouchableOpacity
-                      key={teacher.id}
-                      style={[
-                        styles.teacherOption,
-                        selectedTeacher.id === teacher.id && styles.teacherOptionActive,
-                      ]}
-                      onPress={() => setSelectedTeacher(teacher)}
-                      activeOpacity={0.8}
-                    >
-                      <Text style={styles.teacherOptionEmoji}>{teacher.avatar}</Text>
-                      <View style={styles.teacherOptionInfo}>
-                        <Text style={styles.teacherOptionName}>{teacher.name}</Text>
-                        <Text style={styles.teacherOptionSubject}>{teacher.subject}</Text>
-                      </View>
-                      {selectedTeacher.id === teacher.id && (
-                        <Ionicons name="checkmark-circle" size={20} color={COLORS.primary} />
-                      )}
-                    </TouchableOpacity>
-                  ))}
-                </View>
+                {loadingTeachers ? (
+                  <ActivityIndicator color={COLORS.primary} />
+                ) : teachers.length === 0 ? (
+                  <Text style={styles.errorText}>No teachers found for your school.</Text>
+                ) : (
+                  <View style={styles.teacherSelector}>
+                    {teachers.map((teacher) => (
+                      <TouchableOpacity
+                        key={teacher.id}
+                        style={[
+                          styles.teacherOption,
+                          selectedTeacher?.id === teacher.id && styles.teacherOptionActive,
+                        ]}
+                        onPress={() => setSelectedTeacher(teacher)}
+                        activeOpacity={0.8}
+                      >
+                        <Text style={styles.teacherOptionEmoji}>👩‍🏫</Text>
+                        <View style={styles.teacherOptionInfo}>
+                          <Text style={styles.teacherOptionName}>{teacher.full_name}</Text>
+                          <Text style={styles.teacherOptionSubject}>Teacher</Text>
+                        </View>
+                        {selectedTeacher?.id === teacher.id && (
+                          <Ionicons name="checkmark-circle" size={20} color={COLORS.primary} />
+                        )}
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                )}
               </View>
 
               {/* Select Date */}
@@ -379,10 +458,7 @@ export default function ParentAppointmentsScreen() {
                   placeholder="e.g., Feb 25, 2026"
                   placeholderTextColor={COLORS.gray}
                   value={selectedDate}
-                  onChangeText={(text) => {
-                    setSelectedDate(text);
-                    setErrorMessage('');
-                  }}
+                  onChangeText={(text) => { setSelectedDate(text); setErrorMessage(''); }}
                 />
               </View>
 
@@ -394,10 +470,7 @@ export default function ParentAppointmentsScreen() {
                   placeholder="e.g., 10:00 AM"
                   placeholderTextColor={COLORS.gray}
                   value={selectedTime}
-                  onChangeText={(text) => {
-                    setSelectedTime(text);
-                    setErrorMessage('');
-                  }}
+                  onChangeText={(text) => { setSelectedTime(text); setErrorMessage(''); }}
                 />
               </View>
 
@@ -409,35 +482,34 @@ export default function ParentAppointmentsScreen() {
                   placeholder="What would you like to discuss?"
                   placeholderTextColor={COLORS.gray}
                   value={topic}
-                  onChangeText={(text) => {
-                    setTopic(text);
-                    setErrorMessage('');
-                  }}
+                  onChangeText={(text) => { setTopic(text); setErrorMessage(''); }}
                   multiline
                   numberOfLines={3}
                   textAlignVertical="top"
                 />
               </View>
 
-              {/* Task 12: Error Message Display */}
               {errorMessage ? (
                 <Text style={styles.errorText}>{errorMessage}</Text>
               ) : null}
 
-              {/* Book Button */}
               <TouchableOpacity
-                style={styles.bookButton}
+                style={[styles.bookButton, booking && { opacity: 0.6 }]}
                 onPress={handleBookAppointment}
                 activeOpacity={0.85}
+                disabled={booking}
               >
-                <Text style={styles.bookButtonText}>Request Appointment</Text>
+                {booking ? (
+                  <ActivityIndicator color={COLORS.white} />
+                ) : (
+                  <Text style={styles.bookButtonText}>Request Appointment</Text>
+                )}
               </TouchableOpacity>
             </ScrollView>
           </View>
         </View>
       )}
 
-      {/* Task 11: Integrate Modal Components */}
       {/* Confirmation Modal */}
       {showConfirmationModal && confirmationData && (
         <ConfirmationModal
@@ -453,7 +525,7 @@ export default function ParentAppointmentsScreen() {
         <RescheduleModal
           visible={showRescheduleModal}
           onClose={() => setShowRescheduleModal(false)}
-          appointment={selectedAppointment}
+          appointment={selectedAppointment as any}
           onSubmit={handleRescheduleSubmit}
         />
       )}
@@ -823,7 +895,7 @@ const styles = StyleSheet.create({
     color: COLORS.white,
   },
 
-  // Task 12: Error Text Style
+  // Error Text
   errorText: {
     fontSize: 14,
     color: COLORS.error,

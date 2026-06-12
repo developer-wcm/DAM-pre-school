@@ -37,12 +37,14 @@ import {
 } from '../../lib/attendance';
 import { loadStudentProgress, mergeSkillsWithSaved, saveStudentProgress } from '../../lib/progress';
 import { logActivity } from '../../lib/activity';
+import { sendPushToUsers } from '../../lib/pushNotifications';
 import { supabase } from '../../lib/supabase';
 
 interface StudentProfile {
   id: string;
   full_name: string;
   class: string;
+  parent_id: string | null;
   roll_number: string | null;
   date_of_birth: string | null;
   gender: string | null;
@@ -1319,6 +1321,7 @@ export default function StudentProfileScreen() {
             studentId={studentId}
             schoolId={profile?.school_id ?? ''}
             studentName={student?.full_name ?? ''}
+            parentId={student?.parent_id ?? null}
           />
         )}
 
@@ -1555,6 +1558,7 @@ function FeeTab({
   studentId,
   schoolId,
   studentName,
+  parentId,
 }: {
   feeRecords: FeeRecord[];
   feeStats: FeeStats;
@@ -1563,6 +1567,7 @@ function FeeTab({
   studentId: string;
   schoolId: string;
   studentName: string;
+  parentId: string | null;
 }) {
   const router = useRouter();
   const [selectedPlan, setSelectedPlan] = useState<'monthly' | 'quarterly'>('monthly');
@@ -1763,6 +1768,7 @@ function FeeTab({
         visible={reminderModalVisible}
         feeRecords={filteredRecords.filter(r => !r.paid)}
         onClose={() => setReminderModalVisible(false)}
+        parentId={parentId}
       />
     </View>
   );
@@ -2376,10 +2382,12 @@ function ReminderModal({
   visible,
   feeRecords,
   onClose,
+  parentId,
 }: {
   visible: boolean;
   feeRecords: FeeRecord[];
   onClose: () => void;
+  parentId: string | null;
 }) {
   const [note, setNote] = useState('');
   const [sending, setSending] = useState(false);
@@ -2393,10 +2401,17 @@ function ReminderModal({
   const handleSend = async () => {
     setSending(true);
     try {
-      await new Promise((r) => setTimeout(r, 600));
+      if (parentId) {
+        await sendPushToUsers(
+          [parentId],
+          'Fee Payment Reminder',
+          `You have ${formatCurrency(totalOutstanding)} in outstanding fees. Please clear your dues at the earliest.`,
+          { screen: 'fees' }
+        );
+      }
       Alert.alert(
-        'Reminder Recorded',
-        `Payment reminder for ${formatCurrency(totalOutstanding)} has been noted. Parents will be notified.`,
+        'Reminder Sent',
+        `Payment reminder has been sent to the parent.`,
         [{ text: 'OK', onPress: onClose }]
       );
     } finally {

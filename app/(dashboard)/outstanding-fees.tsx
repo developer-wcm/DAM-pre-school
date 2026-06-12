@@ -14,12 +14,14 @@ import {
 } from 'react-native';
 import { DEFAULT_SCHOOL_ID } from '../../constants/school';
 import { AppColors, AppShadows } from '../../constants/theme';
+import { sendPushToUsers } from '../../lib/pushNotifications';
 import { supabase } from '../../lib/supabase';
 
 interface OverdueStudent {
   id: string;
   full_name: string;
   class: string;
+  parent_id: string | null;
   amount: number;
   months_overdue: number;
   overdue_count: number;
@@ -72,7 +74,7 @@ export default function OutstandingFeesScreen() {
 
       const { data: studentsData, error: sErr } = await supabase
         .from('students')
-        .select('id, full_name, class')
+        .select('id, full_name, class, parent_id')
         .eq('school_id', schoolId)
         .eq('status', 'active');
       if (sErr) throw sErr;
@@ -106,6 +108,7 @@ export default function OutstandingFeesScreen() {
           id: s.id,
           full_name: s.full_name,
           class: s.class,
+          parent_id: s.parent_id ?? null,
           amount: fm.total,
           months_overdue: months,
           overdue_count: fm.count,
@@ -154,13 +157,29 @@ export default function OutstandingFeesScreen() {
   async function sendReminders() {
     if (selected.size === 0) return;
     setSendingReminders(true);
-    await new Promise((r) => setTimeout(r, 700));
-    setSendingReminders(false);
-    Alert.alert(
-      'Reminders Sent',
-      `Payment reminders sent to ${selected.size} student${selected.size > 1 ? 's' : ''}.`,
-      [{ text: 'OK', onPress: () => setSelected(new Set()) }]
-    );
+    try {
+      const selectedStudents = students.filter((s) => selected.has(s.id));
+      const parentIds = selectedStudents
+        .map((s) => s.parent_id)
+        .filter((id): id is string => id !== null);
+
+      if (parentIds.length > 0) {
+        await sendPushToUsers(
+          parentIds,
+          'Fee Payment Reminder',
+          `You have outstanding school fees. Please clear your dues at the earliest.`,
+          { screen: 'fees' }
+        );
+      }
+
+      Alert.alert(
+        'Reminders Sent',
+        `Payment reminders sent to ${selected.size} student${selected.size > 1 ? 's' : ''}.`,
+        [{ text: 'OK', onPress: () => setSelected(new Set()) }]
+      );
+    } finally {
+      setSendingReminders(false);
+    }
   }
 
   if (loading) {

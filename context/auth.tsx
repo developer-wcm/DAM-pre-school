@@ -154,6 +154,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setProfile(p);
       }
       setLoading(false);
+    }).catch(async () => {
+      // Stale/invalid token — clear local state and let the user sign in again
+      setSession(null);
+      setUser(null);
+      setProfile(null);
+      try { await supabase.auth.signOut(); } catch { /* ignore */ }
+      setLoading(false);
     });
 
     // Listen for auth changes (login, logout, token refresh)
@@ -163,7 +170,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // If token refresh failed, force sign out and redirect to login to
       // prompt the user to re-authenticate. This helps recover from
       // "Invalid Refresh Token" errors coming from the refresh endpoint.
-      if (event === 'TOKEN_REFRESH_FAILED') {
+      if ((event as string) === 'TOKEN_REFRESH_FAILED') {
         console.warn('Token refresh failed — forcing sign out');
         setSession(null);
         setUser(null);
