@@ -1,4 +1,5 @@
 import { Session, User } from '@supabase/supabase-js';
+import * as Linking from 'expo-linking';
 import { useRouter, useSegments } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
 import { createContext, useContext, useEffect, useState } from 'react';
@@ -247,11 +248,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // ── Google OAuth ──────────────────────────────────────────────────────────
   async function signInWithGoogle(): Promise<{ error: string | null }> {
     try {
-      // Use Expo scheme for development, custom scheme for production
-      const redirectTo = __DEV__ 
-        ? 'exp://localhost:8081/--/auth-callback'
-        : 'preschoolapp://auth-callback';
-      
+      // Let Expo compute the correct redirect URI for the current runtime
+      // (Expo Go LAN/tunnel URL, dev client, or production custom scheme).
+      const redirectTo = Linking.createURL('auth-callback');
+
       console.log('Starting Google OAuth with redirect:', redirectTo);
       
       const { data, error } = await supabase.auth.signInWithOAuth({
@@ -282,52 +282,60 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
 
       console.log('OAuth success, parsing tokens...');
-      
-      // Parse the URL to get tokens - OAuth returns tokens in the URL hash fragment
+
       const urlObj = new URL(result.url);
-      const hashParams = new URLSearchParams(urlObj.hash.substring(1)); // Remove # and parse
-      const accessToken = hashParams.get('access_token');
-      const refreshToken = hashParams.get('refresh_token');
 
-      console.log('Tokens found:', { hasAccess: !!accessToken, hasRefresh: !!refreshToken });
+      // PKCE flow: Supabase returns a `code` in query params that must be exchanged
+      const code = urlObj.searchParams.get('code');
+      let newSession = null;
 
-      if (accessToken && refreshToken) {
-        const { error: sessionError } = await supabase.auth.setSession({
-          access_token: accessToken,
-          refresh_token: refreshToken,
-        });
-        if (sessionError) {
-          console.error('Session error:', sessionError);
-          return { error: sessionError.message };
+      if (code) {
+        console.log('PKCE code found, exchanging for session...');
+        const { data: exchangeData, error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
+        if (exchangeError) {
+          console.error('Code exchange error:', exchangeError);
+          return { error: exchangeError.message };
         }
-        
-        console.log('Session set, fetching user and profile...');
-        
-        // Get the session and user
-        const { data: { session: newSession } } = await supabase.auth.getSession();
-        if (newSession?.user) {
-          console.log('User found:', newSession.user.id);
-          
-          // Set session and user immediately
-          setSession(newSession);
-          setUser(newSession.user);
-          
-          // Wait a bit for the trigger to create the profile
-          await new Promise(resolve => setTimeout(resolve, 1000));
-          
-          // Fetch profile
-          const p = await fetchProfile(newSession.user.id);
-          console.log('Profile fetched:', p);
-          
-          if (p) {
-            setProfile(p);
-            // Route guard will handle navigation based on profile state
-          } else {
-            console.warn('Profile not found after OAuth, user may need to complete setup');
-            // Profile will be null, route guard will redirect to account-pending
+        newSession = exchangeData.session;
+      } else {
+        // Implicit flow fallback: tokens in hash fragment
+        const hashParams = new URLSearchParams(urlObj.hash.substring(1));
+        const accessToken = hashParams.get('access_token');
+        const refreshToken = hashParams.get('refresh_token');
+
+        console.log('Implicit tokens found:', { hasAccess: !!accessToken, hasRefresh: !!refreshToken });
+
+        if (accessToken && refreshToken) {
+          const { error: sessionError } = await supabase.auth.setSession({
+            access_token: accessToken,
+            refresh_token: refreshToken,
+          });
+          if (sessionError) {
+            console.error('Session error:', sessionError);
+            return { error: sessionError.message };
           }
+          const { data: { session: s } } = await supabase.auth.getSession();
+          newSession = s;
         }
       }
+
+      if (newSession?.user) {
+        console.log('User found:', newSession.user.id);
+        setSession(newSession);
+        setUser(newSession.user);
+
+        // Wait for the DB trigger to create the profile row
+        await new Promise(resolve => setTimeout(resolve, 1000));
+
+        const p = await fetchProfile(newSession.user.id);
+        console.log('Profile fetched:', p);
+        if (p) {
+          setProfile(p);
+        } else {
+          console.warn('Profile not found after OAuth, routing to account-pending');
+        }
+      }
+
       return { error: null };
     } catch (e: any) {
       console.error('Google OAuth error:', e);

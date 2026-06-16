@@ -1,30 +1,20 @@
-import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 
 /**
  * OAuth Callback Handler
- * This screen handles the redirect from Google OAuth
- * The actual token exchange happens in the auth context
+ * This screen handles the redirect from Google OAuth.
+ * The actual token exchange happens in the auth context, and the auth
+ * context's route guard redirects based on role once the session and
+ * profile are loaded — so this screen only shows a spinner and must NOT
+ * force a redirect of its own (that would race the exchange and bounce a
+ * successful sign-in back to login).
  */
 export default function AuthCallbackScreen() {
-  const router = useRouter();
-  const [status, setStatus] = useState('Processing authentication...');
+  const [status] = useState('Completing sign in...');
 
   useEffect(() => {
     console.log('Auth callback screen mounted');
-    setStatus('Completing sign in...');
-    
-    // Give the auth context time to process the OAuth callback
-    const timer = setTimeout(() => {
-      console.log('Auth callback timeout, redirecting to login');
-      setStatus('Redirecting...');
-      // The auth context will handle the redirect based on user role
-      // If we're still here after 3 seconds, something went wrong
-      router.replace('/login');
-    }, 3000);
-
-    return () => clearTimeout(timer);
   }, []);
 
   return (
