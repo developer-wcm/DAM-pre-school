@@ -1,6 +1,7 @@
 import Constants from 'expo-constants'
 import * as Device from 'expo-device'
 import * as Notifications from 'expo-notifications'
+import { useRouter } from 'expo-router'
 import { useEffect, useRef } from 'react'
 import { Platform } from 'react-native'
 import { supabase } from '../lib/supabase'
@@ -47,8 +48,40 @@ async function getExpoPushToken(): Promise<string | null> {
   try {
     const { data } = await Notifications.getExpoPushTokenAsync({ projectId: EAS_PROJECT_ID })
     return data
-  } catch {
+  } catch (e) {
+    console.error('[Push] Failed to get Expo push token:', e)
     return null
+  }
+}
+
+function navigateForNotification(
+  router: ReturnType<typeof useRouter>,
+  data: Record<string, unknown> | undefined,
+  role: string | null
+) {
+  const screen = data?.screen
+
+  switch (screen) {
+    case 'students': {
+      const studentId = data?.studentId
+      if (role === 'admin' || role === 'principal') {
+        router.push(studentId ? `/(dashboard)/student-profile?id=${studentId}` : '/(dashboard)/students')
+      } else if (role === 'teacher') {
+        router.push('/(teacher)')
+      }
+      break
+    }
+    case 'attendance': {
+      if (role === 'admin' || role === 'principal') router.push('/(dashboard)/attendance')
+      else if (role === 'teacher') router.push('/(teacher)/attendance')
+      else if (role === 'parent') router.push('/(parent)/academic')
+      break
+    }
+    case 'fees': {
+      if (role === 'admin' || role === 'principal') router.push('/(dashboard)/outstanding-fees')
+      else if (role === 'parent') router.push('/(parent)/fees')
+      break
+    }
   }
 }
 
@@ -57,6 +90,7 @@ export function usePushNotifications(
   role: string | null,
   schoolId: string | null
 ) {
+  const router = useRouter()
   const notificationListener = useRef<Notifications.EventSubscription | null>(null)
   const responseListener = useRef<Notifications.EventSubscription | null>(null)
 
@@ -78,17 +112,24 @@ export function usePushNotifications(
       )
     })
 
+    // Cold start: app was killed and opened by tapping a notification
+    Notifications.getLastNotificationResponseAsync().then((response) => {
+      if (response) {
+        navigateForNotification(router, response.notification.request.content.data, role)
+      }
+    })
+
     notificationListener.current = Notifications.addNotificationReceivedListener(() => {
       // notification received while app is foregrounded
     })
 
-    responseListener.current = Notifications.addNotificationResponseReceivedListener(() => {
-      // user tapped the notification
+    responseListener.current = Notifications.addNotificationResponseReceivedListener((response) => {
+      navigateForNotification(router, response.notification.request.content.data, role)
     })
 
     return () => {
       notificationListener.current?.remove()
       responseListener.current?.remove()
     }
-  }, [userId, role, schoolId])
+  }, [userId, role, schoolId, router])
 }
