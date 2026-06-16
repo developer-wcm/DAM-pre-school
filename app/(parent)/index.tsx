@@ -3,7 +3,8 @@ import { useRouter } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
+  Linking,
+  Modal,
   ScrollView,
   StyleSheet,
   Text,
@@ -251,6 +252,65 @@ const av = StyleSheet.create({
   text: { fontSize: 36, fontWeight: '800', color: '#0F1869' },
 });
 
+// ─── Notices (announcements) ────────────────────────────────────────────────
+
+interface Notice {
+  id: string;
+  title: string;
+  body: string;
+  file_url: string | null;
+  target_audience: string | null;
+  created_at: string;
+  author: string | null;
+}
+
+// Audiences that every parent should see (anything else is treated as a
+// class-specific target and only shown when it matches the child's class).
+const BROADCAST_AUDIENCES = ['all_parents', 'all', 'everyone', 'parents'];
+
+function isNoticeForChild(audience: string | null, childClass: string | null): boolean {
+  if (!audience) return true; // untargeted notice → show to everyone
+  const a = audience.trim().toLowerCase();
+  if (BROADCAST_AUDIENCES.includes(a)) return true;
+  if (childClass && a === childClass.trim().toLowerCase()) return true;
+  return false;
+}
+
+function useNotices(childClass: string | null) {
+  const [notices, setNotices] = useState<Notice[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  const fetchNotices = async () => {
+    setLoading(true);
+    const { data, error } = await supabase
+      .from('announcements')
+      .select('id, title, body, file_url, target_audience, created_at, profiles:created_by(full_name)')
+      .order('created_at', { ascending: false })
+      .limit(50);
+
+    if (error) {
+      console.warn('[Notices] fetch failed:', error.message);
+      setNotices([]);
+    } else {
+      const mapped: Notice[] = (data ?? [])
+        .filter((row: any) => isNoticeForChild(row.target_audience, childClass))
+        .map((row: any) => ({
+          id: row.id,
+          title: row.title,
+          body: row.body,
+          file_url: row.file_url ?? null,
+          target_audience: row.target_audience ?? null,
+          created_at: row.created_at,
+          author: row.profiles?.full_name ?? null,
+        }));
+      setNotices(mapped);
+    }
+    setLoading(false);
+  };
+
+  return { notices, loading, fetchNotices };
+}
+
 // ─── Main Screen ──────────────────────────────────────────────────────────────
 
 export default function ParentChildScreen() {
@@ -258,6 +318,15 @@ export default function ParentChildScreen() {
   const { user } = useAuth();
   const { activeChild, children, loading: childLoading } = useChild();
   const { stats, loading: statsLoading } = useChildStats(activeChild?.id);
+
+  // Notices (school announcements)
+  const { notices, loading: noticesLoading, fetchNotices } = useNotices(activeChild?.class ?? null);
+  const [noticesVisible, setNoticesVisible] = useState(false);
+
+  const openNotices = () => {
+    setNoticesVisible(true);
+    fetchNotices();
+  };
 
   // Remarks
   const [remarks, setRemarks] = useState<any[]>([]);
@@ -346,7 +415,7 @@ export default function ParentChildScreen() {
             <TouchableOpacity
               style={styles.noticeBtn}
               activeOpacity={0.85}
-              onPress={() => Alert.alert('Notices', 'No new notices from school at this time.')}
+              onPress={openNotices}
             >
               <Ionicons name="megaphone-outline" size={18} color="#FFFFFF" />
               <Text style={styles.noticeBtnText}>Notices</Text>
@@ -503,6 +572,69 @@ export default function ParentChildScreen() {
 
         <View style={{ height: 100 }} />
       </ScrollView>
+
+      {/* ── Notices modal ── */}
+      <Modal
+        visible={noticesVisible}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setNoticesVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalSheet}>
+            <View style={styles.modalHeader}>
+              <View style={styles.modalTitleRow}>
+                <Ionicons name="megaphone" size={20} color="#0F1869" />
+                <Text style={styles.modalTitle}>Notices</Text>
+              </View>
+              <TouchableOpacity
+                onPress={() => setNoticesVisible(false)}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                accessibilityLabel="Close notices"
+              >
+                <Ionicons name="close" size={24} color="#7A7A9D" />
+              </TouchableOpacity>
+            </View>
+
+            {noticesLoading ? (
+              <ActivityIndicator color="#0F1869" style={{ marginVertical: 40 }} />
+            ) : notices.length === 0 ? (
+              <View style={styles.noticeEmpty}>
+                <Ionicons name="megaphone-outline" size={36} color="#C4C4D6" />
+                <Text style={styles.noticeEmptyText}>No notices from school yet.</Text>
+              </View>
+            ) : (
+              <ScrollView
+                contentContainerStyle={{ paddingBottom: 24, gap: 12 }}
+                showsVerticalScrollIndicator={false}
+              >
+                {notices.map((n) => (
+                  <View key={n.id} style={styles.noticeItem}>
+                    <Text style={styles.noticeItemTitle}>{n.title}</Text>
+                    <Text style={styles.noticeItemBody}>{n.body}</Text>
+                    {n.file_url && (
+                      <TouchableOpacity
+                        style={styles.noticeAttachment}
+                        activeOpacity={0.8}
+                        onPress={() => Linking.openURL(n.file_url!)}
+                      >
+                        <Ionicons name="document-attach-outline" size={16} color="#7B6FE8" />
+                        <Text style={styles.noticeAttachmentText}>View attachment</Text>
+                      </TouchableOpacity>
+                    )}
+                    <Text style={styles.noticeItemMeta}>
+                      {n.author ? `${n.author} · ` : ''}
+                      {new Date(n.created_at).toLocaleDateString('en-IN', {
+                        day: 'numeric', month: 'short', year: 'numeric',
+                      })}
+                    </Text>
+                  </View>
+                ))}
+              </ScrollView>
+            )}
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -638,4 +770,38 @@ const styles = StyleSheet.create({
   remarkMsg: { fontSize: 14, fontWeight: '600', color: '#1A1A2E', lineHeight: 20 },
   remarkMeta: { fontSize: 11, color: '#9A9AB0' },
   remarkDivider: { height: 1, backgroundColor: '#F4F5F9', marginVertical: 4 },
+
+  // Notices modal
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    justifyContent: 'flex-end',
+  },
+  modalSheet: {
+    backgroundColor: '#F0EEFB',
+    borderTopLeftRadius: 24, borderTopRightRadius: 24,
+    paddingHorizontal: 20, paddingTop: 18, paddingBottom: 8,
+    maxHeight: '80%',
+  },
+  modalHeader: {
+    flexDirection: 'row', alignItems: 'center',
+    justifyContent: 'space-between', marginBottom: 16,
+  },
+  modalTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  modalTitle: { fontSize: 20, fontWeight: '800', color: '#0F1869' },
+  noticeEmpty: { alignItems: 'center', gap: 12, paddingVertical: 48 },
+  noticeEmptyText: { fontSize: 14, color: '#9A9AB0', fontWeight: '500' },
+  noticeItem: {
+    backgroundColor: '#FFFFFF', borderRadius: 16,
+    padding: 16, gap: 6,
+    borderLeftWidth: 4, borderLeftColor: '#E8A020',
+  },
+  noticeItemTitle: { fontSize: 15, fontWeight: '800', color: '#0F1869' },
+  noticeItemBody: { fontSize: 14, color: '#4A4A65', lineHeight: 21 },
+  noticeItemMeta: { fontSize: 11, color: '#9A9AB0', marginTop: 2 },
+  noticeAttachment: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    alignSelf: 'flex-start', marginTop: 2,
+  },
+  noticeAttachmentText: { fontSize: 13, fontWeight: '600', color: '#7B6FE8' },
 });

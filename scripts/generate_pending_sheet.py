@@ -11,9 +11,12 @@ from openpyxl.utils import get_column_letter
 # Status: Pending | In progress | Needs verification
 ROWS = [
     # --- Partially implemented (from code + progress doc, reconciled) ---
-    ("Communication", "Realtime announcements (parent view)", "In progress", "High",
-     "PROGRESS_TRACKING.md / README_DASHBOARDS.md",
-     "Parents see announcements but no Supabase realtime subscription yet."),
+    ("Communication", "Parent announcements view", "Needs verification", "High",
+     "app/(parent)/index.tsx (implemented this session)",
+     "DONE: 'Notices' button now opens a modal that fetches from announcements (audience-filtered) and shows title/body/attachment/date. Verify on device. Realtime live-update is the remaining follow-up (needs Realtime enabled on the table)."),
+    ("Communication", "Realtime announcements (live update)", "Pending", "Medium",
+     "follow-up to parent announcements view",
+     "Notices refetch each time the modal opens. Optional: subscribe via supabase.channel(postgres_changes) so new notices appear without reopening; requires enabling Realtime on the announcements table in Supabase."),
     ("Communication", "Parent–Teacher chat", "Pending", "High",
      "PROGRESS_TRACKING.md",
      "Messaging UI exists for admin; parent<->teacher channel not connected."),
@@ -138,6 +141,7 @@ for col, w in enumerate(widths, start=1):
 ws.freeze_panes = "A3"
 ws.auto_filter.ref = f"A2:G{len(ROWS) + 2}"
 
-out = "DAM_PreSchool_Pending_Work.xlsx"
+import sys
+out = sys.argv[1] if len(sys.argv) > 1 else "DAM_PreSchool_Pending_Work.xlsx"
 wb.save(out)
 print(f"Wrote {out} with {len(ROWS)} items")
