@@ -3,7 +3,6 @@ export type AuthUserRole = 'admin' | 'principal' | 'teacher' | 'parent' | null;
 export interface AuthProfileLike {
   role: AuthUserRole;
   approved: boolean;
-  code_verified?: boolean;
 }
 
 export function getAuthRedirectTarget(profile: AuthProfileLike | null): string | null {
@@ -26,10 +25,7 @@ export function getAuthRedirectTarget(profile: AuthProfileLike | null): string |
   }
 
   if (profile.role === 'parent') {
-    if (profile.code_verified) {
-      return '/(parent)';
-    }
-    return '/enter-code';
+    return '/(parent)';
   }
 
   return null;

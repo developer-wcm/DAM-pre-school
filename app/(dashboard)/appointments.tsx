@@ -28,12 +28,15 @@ import { supabase } from '../../lib/supabase';
 type AppointmentStatus = 'requested' | 'confirmed' | 'rescheduled' | 'cancelled' | 'completed';
 type TabId = 'upcoming' | 'past';
 
+type MeetingType = 'parent_teacher' | 'parent_admin' | 'teacher_admin';
+
 interface Appointment {
   id: string;
-  parent_name: string;
-  parent_id: string;
-  teacher_name: string;
-  teacher_id: string;
+  meeting_type: MeetingType;
+  parent_name: string | null;
+  parent_id: string | null;
+  teacher_name: string | null;
+  teacher_id: string | null;
   student_name: string;
   date: string;
   time_slot: string;
@@ -41,6 +44,18 @@ interface Appointment {
   status: AppointmentStatus;
   notes: string | null;
   created_at: string;
+}
+
+interface SimpleProfile {
+  id: string;
+  full_name: string;
+}
+
+interface SimpleStudent {
+  id: string;
+  full_name: string;
+  class: string | null;
+  parent_id: string | null;
 }
 
 // ─── Time slots ────────────────────────────────────────────────────────────────
@@ -97,6 +112,11 @@ const STATUS_CONFIG: Record<AppointmentStatus, { label: string; bg: string; text
 
 function getInitials(name: string) {
   return name.split(' ').map((n) => n[0]).join('').toUpperCase().slice(0, 2);
+}
+
+function otherPartyLabel(a: Appointment) {
+  if (a.meeting_type === 'teacher_admin') return a.teacher_name ?? 'Teacher';
+  return a.parent_name ?? 'Parent';
 }
 
 // ─── Avatar ────────────────────────────────────────────────────────────────────
@@ -161,7 +181,7 @@ function RescheduleModal({
           <Text style={rStyles.title}>Reschedule Meeting</Text>
           <Text style={rStyles.sub}>
             Suggest a new time for your meeting with{' '}
-            <Text style={rStyles.subBold}>{appointment.teacher_name}</Text>.
+            <Text style={rStyles.subBold}>{otherPartyLabel(appointment)}</Text>.
           </Text>
 
           {/* Date */}
@@ -281,7 +301,7 @@ function NotesModal({
           <View style={rStyles.handle} />
           <Text style={rStyles.title}>Meeting Notes</Text>
           <Text style={rStyles.sub}>
-            Notes for meeting with <Text style={rStyles.subBold}>{appointment.parent_name}</Text>
+            Notes for meeting with <Text style={rStyles.subBold}>{otherPartyLabel(appointment)}</Text>
           </Text>
           <TextInput
             style={[rStyles.reasonInput, { height: 120, marginTop: 16 }]}
@@ -368,18 +388,31 @@ function AppointmentCard({
 }) {
   const statusCfg = STATUS_CONFIG[item.status];
   const past = isPast(item.date);
-  const bg = avatarColor(item.parent_name);
+
+  const isTeacherAdmin = item.meeting_type === 'teacher_admin';
+  const isParentAdmin = item.meeting_type === 'parent_admin';
+  const headerName = isTeacherAdmin
+    ? (item.teacher_name ?? 'Teacher')
+    : (item.parent_name ?? 'Parent');
+  const headerSub = isTeacherAdmin
+    ? 'Teacher meeting with Admin'
+    : isParentAdmin
+      ? 'Parent meeting with Admin'
+      : item.student_name ? `for ${item.student_name}` : '';
+  const bg = avatarColor(headerName);
 
   return (
     <View style={cardStyles.card}>
       {/* Header row */}
       <View style={cardStyles.header}>
         <View style={[cardStyles.avatar, { backgroundColor: bg }]}>
-          <Text style={cardStyles.avatarText}>{getInitials(item.parent_name)}</Text>
+          {isTeacherAdmin
+            ? <Ionicons name="school" size={20} color="#FFF" />
+            : <Text style={cardStyles.avatarText}>{getInitials(headerName)}</Text>}
         </View>
         <View style={cardStyles.headerInfo}>
-          <Text style={cardStyles.parentName} numberOfLines={1}>{item.parent_name}</Text>
-          <Text style={cardStyles.studentName}>for {item.student_name}</Text>
+          <Text style={cardStyles.parentName} numberOfLines={1}>{headerName}</Text>
+          {headerSub ? <Text style={cardStyles.studentName}>{headerSub}</Text> : null}
         </View>
         <View style={[cardStyles.statusBadge, { backgroundColor: statusCfg.bg }]}>
           <Ionicons name={statusCfg.icon} size={12} color={statusCfg.text} />
@@ -399,7 +432,7 @@ function AppointmentCard({
             <Text style={cardStyles.detailText}>Topic: {item.topic}</Text>
           </View>
         ) : null}
-        {item.teacher_name ? (
+        {item.meeting_type === 'parent_teacher' && item.teacher_name ? (
           <View style={cardStyles.detailRow}>
             <Ionicons name="school-outline" size={15} color="#7B6FE8" />
             <Text style={cardStyles.detailText}>Teacher: {item.teacher_name}</Text>
@@ -444,6 +477,251 @@ function AppointmentCard({
   );
 }
 
+// ─── Schedule Meeting Modal (admin proactively books parent + teacher) ─────────
+
+function ScheduleModal({
+  visible,
+  schoolId,
+  onClose,
+  onScheduled,
+}: {
+  visible: boolean;
+  schoolId: string;
+  onClose: () => void;
+  onScheduled: () => void;
+}) {
+  const DATES = getUpcomingDates();
+  const [teachers, setTeachers] = useState<SimpleProfile[]>([]);
+  const [students, setStudents] = useState<(SimpleStudent & { parent_name?: string })[]>([]);
+  const [loadingOptions, setLoadingOptions] = useState(false);
+
+  const [selectedTeacher, setSelectedTeacher] = useState<SimpleProfile | null>(null);
+  const [selectedStudent, setSelectedStudent] = useState<SimpleStudent | null>(null);
+  const [selectedDate, setSelectedDate] = useState(DATES[1].value);
+  const [selectedSlot, setSelectedSlot] = useState(TIME_SLOTS[6]);
+  const [topic, setTopic] = useState('');
+  const [showTeacherPicker, setShowTeacherPicker] = useState(false);
+  const [showStudentPicker, setShowStudentPicker] = useState(false);
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [showSlotPicker, setShowSlotPicker] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+
+  const slideAnim = useRef(new Animated.Value(600)).current;
+
+  useEffect(() => {
+    if (!visible) {
+      slideAnim.setValue(600);
+      return;
+    }
+    Animated.spring(slideAnim, { toValue: 0, useNativeDriver: true, tension: 70, friction: 10 }).start();
+    setSelectedTeacher(null);
+    setSelectedStudent(null);
+    setTopic('');
+    setLoadingOptions(true);
+    Promise.all([
+      supabase.from('profiles').select('id, full_name').eq('school_id', schoolId).eq('role', 'teacher').order('full_name'),
+      supabase.from('students').select('id, full_name, class, parent_id').eq('school_id', schoolId).order('full_name'),
+    ]).then(([teacherRes, studentRes]) => {
+      setTeachers((teacherRes.data ?? []) as SimpleProfile[]);
+      setStudents((studentRes.data ?? []) as SimpleStudent[]);
+      setLoadingOptions(false);
+    });
+  }, [visible, schoolId]);
+
+  async function handleSubmit() {
+    if (!selectedTeacher || !selectedStudent || !topic.trim()) {
+      Alert.alert('Missing info', 'Please select a teacher, a student, and add a topic.');
+      return;
+    }
+    if (!selectedStudent.parent_id) {
+      Alert.alert('No parent linked', 'This student has no parent account linked yet. Link a parent in User Management first.');
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const { data: parentProfile } = await supabase
+        .from('profiles')
+        .select('full_name')
+        .eq('id', selectedStudent.parent_id)
+        .single();
+
+      const { error } = await supabase.from('appointments').insert({
+        school_id: schoolId,
+        meeting_type: 'parent_teacher',
+        requester_role: 'admin',
+        teacher_id: selectedTeacher.id,
+        teacher_name: selectedTeacher.full_name,
+        parent_id: selectedStudent.parent_id,
+        parent_name: parentProfile?.full_name ?? 'Parent',
+        student_name: selectedStudent.full_name,
+        date: selectedDate,
+        time_slot: selectedSlot,
+        topic: topic.trim(),
+        status: 'confirmed',
+      });
+      if (error) throw error;
+      onScheduled();
+    } catch (e: any) {
+      Alert.alert('Error', e.message || 'Could not schedule meeting.');
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  const dateLabel = DATES.find((d) => d.value === selectedDate)?.label ?? selectedDate;
+
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <View style={rStyles.overlay}>
+        <Animated.View style={[rStyles.sheet, { transform: [{ translateY: slideAnim }] }]}>
+          <View style={rStyles.handle} />
+          <Text style={rStyles.title}>Schedule Meeting</Text>
+          <Text style={rStyles.sub}>Set up a confirmed meeting between a teacher and a parent.</Text>
+
+          {loadingOptions ? (
+            <ActivityIndicator color="#7B6FE8" style={{ marginVertical: 24 }} />
+          ) : (
+            <ScrollView style={{ maxHeight: 460 }} showsVerticalScrollIndicator={false}>
+              {/* Teacher */}
+              <Text style={rStyles.fieldLabel}>Teacher <Text style={rStyles.req}>*</Text></Text>
+              <TouchableOpacity style={rStyles.picker} onPress={() => { setShowTeacherPicker((v) => !v); setShowStudentPicker(false); }} activeOpacity={0.8}>
+                <Ionicons name="school-outline" size={18} color="#7B6FE8" />
+                <Text style={rStyles.pickerText}>{selectedTeacher?.full_name ?? 'Select teacher'}</Text>
+                <Ionicons name={showTeacherPicker ? 'chevron-up' : 'chevron-down'} size={18} color={AppColors.textTertiary} />
+              </TouchableOpacity>
+              {showTeacherPicker && (
+                <View style={rStyles.dropdown}>
+                  <ScrollView style={{ maxHeight: 180 }} nestedScrollEnabled>
+                    {teachers.map((t) => (
+                      <TouchableOpacity
+                        key={t.id}
+                        style={[rStyles.dropItem, selectedTeacher?.id === t.id && rStyles.dropItemActive]}
+                        onPress={() => { setSelectedTeacher(t); setShowTeacherPicker(false); }}
+                        activeOpacity={0.8}
+                      >
+                        <Text style={[rStyles.dropItemText, selectedTeacher?.id === t.id && rStyles.dropItemTextActive]}>{t.full_name}</Text>
+                        {selectedTeacher?.id === t.id && <Ionicons name="checkmark" size={16} color="#7B6FE8" />}
+                      </TouchableOpacity>
+                    ))}
+                    {teachers.length === 0 && <Text style={rStyles.emptyDropText}>No teachers found.</Text>}
+                  </ScrollView>
+                </View>
+              )}
+
+              {/* Student (determines parent) */}
+              <Text style={[rStyles.fieldLabel, { marginTop: 14 }]}>Student (determines parent) <Text style={rStyles.req}>*</Text></Text>
+              <TouchableOpacity style={rStyles.picker} onPress={() => { setShowStudentPicker((v) => !v); setShowTeacherPicker(false); }} activeOpacity={0.8}>
+                <Ionicons name="person-outline" size={18} color="#7B6FE8" />
+                <Text style={rStyles.pickerText}>
+                  {selectedStudent ? `${selectedStudent.full_name}${selectedStudent.class ? ` (${selectedStudent.class})` : ''}` : 'Select student'}
+                </Text>
+                <Ionicons name={showStudentPicker ? 'chevron-up' : 'chevron-down'} size={18} color={AppColors.textTertiary} />
+              </TouchableOpacity>
+              {showStudentPicker && (
+                <View style={rStyles.dropdown}>
+                  <ScrollView style={{ maxHeight: 180 }} nestedScrollEnabled>
+                    {students.map((s) => (
+                      <TouchableOpacity
+                        key={s.id}
+                        style={[rStyles.dropItem, selectedStudent?.id === s.id && rStyles.dropItemActive]}
+                        onPress={() => { setSelectedStudent(s); setShowStudentPicker(false); }}
+                        activeOpacity={0.8}
+                      >
+                        <Text style={[rStyles.dropItemText, selectedStudent?.id === s.id && rStyles.dropItemTextActive]}>
+                          {s.full_name}{s.class ? ` (${s.class})` : ''}{!s.parent_id ? ' — no parent linked' : ''}
+                        </Text>
+                        {selectedStudent?.id === s.id && <Ionicons name="checkmark" size={16} color="#7B6FE8" />}
+                      </TouchableOpacity>
+                    ))}
+                    {students.length === 0 && <Text style={rStyles.emptyDropText}>No students found.</Text>}
+                  </ScrollView>
+                </View>
+              )}
+
+              {/* Date */}
+              <Text style={[rStyles.fieldLabel, { marginTop: 14 }]}>Date <Text style={rStyles.req}>*</Text></Text>
+              <TouchableOpacity style={rStyles.picker} onPress={() => { setShowDatePicker((v) => !v); setShowSlotPicker(false); }} activeOpacity={0.8}>
+                <Ionicons name="calendar-outline" size={18} color="#7B6FE8" />
+                <Text style={rStyles.pickerText}>{dateLabel}</Text>
+                <Ionicons name={showDatePicker ? 'chevron-up' : 'chevron-down'} size={18} color={AppColors.textTertiary} />
+              </TouchableOpacity>
+              {showDatePicker && (
+                <View style={rStyles.dropdown}>
+                  <ScrollView style={{ maxHeight: 180 }} nestedScrollEnabled>
+                    {DATES.map((d) => (
+                      <TouchableOpacity
+                        key={d.value}
+                        style={[rStyles.dropItem, d.value === selectedDate && rStyles.dropItemActive]}
+                        onPress={() => { setSelectedDate(d.value); setShowDatePicker(false); }}
+                        activeOpacity={0.8}
+                      >
+                        <Text style={[rStyles.dropItemText, d.value === selectedDate && rStyles.dropItemTextActive]}>{d.label}</Text>
+                        {d.value === selectedDate && <Ionicons name="checkmark" size={16} color="#7B6FE8" />}
+                      </TouchableOpacity>
+                    ))}
+                  </ScrollView>
+                </View>
+              )}
+
+              {/* Time */}
+              <Text style={[rStyles.fieldLabel, { marginTop: 14 }]}>Time <Text style={rStyles.req}>*</Text></Text>
+              <TouchableOpacity style={rStyles.picker} onPress={() => { setShowSlotPicker((v) => !v); setShowDatePicker(false); }} activeOpacity={0.8}>
+                <Ionicons name="time-outline" size={18} color="#7B6FE8" />
+                <Text style={rStyles.pickerText}>{selectedSlot}</Text>
+                <Ionicons name={showSlotPicker ? 'chevron-up' : 'chevron-down'} size={18} color={AppColors.textTertiary} />
+              </TouchableOpacity>
+              {showSlotPicker && (
+                <View style={rStyles.dropdown}>
+                  <ScrollView style={{ maxHeight: 180 }} nestedScrollEnabled>
+                    {TIME_SLOTS.map((slot) => (
+                      <TouchableOpacity
+                        key={slot}
+                        style={[rStyles.dropItem, slot === selectedSlot && rStyles.dropItemActive]}
+                        onPress={() => { setSelectedSlot(slot); setShowSlotPicker(false); }}
+                        activeOpacity={0.8}
+                      >
+                        <Text style={[rStyles.dropItemText, slot === selectedSlot && rStyles.dropItemTextActive]}>{slot}</Text>
+                        {slot === selectedSlot && <Ionicons name="checkmark" size={16} color="#7B6FE8" />}
+                      </TouchableOpacity>
+                    ))}
+                  </ScrollView>
+                </View>
+              )}
+
+              {/* Topic */}
+              <Text style={[rStyles.fieldLabel, { marginTop: 14 }]}>Topic <Text style={rStyles.req}>*</Text></Text>
+              <TextInput
+                style={rStyles.reasonInput}
+                value={topic}
+                onChangeText={setTopic}
+                placeholder="e.g., Annual review, behavior discussion"
+                placeholderTextColor={AppColors.textLight}
+                multiline
+              />
+
+              <TouchableOpacity style={rStyles.submitBtn} onPress={handleSubmit} disabled={submitting} activeOpacity={0.88}>
+                <LinearGradient colors={['#7B6FE8', '#4ADE80']} style={rStyles.submitGradient} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
+                  {submitting
+                    ? <ActivityIndicator color="#FFF" size="small" />
+                    : <>
+                        <Text style={rStyles.submitText}>Schedule & Confirm</Text>
+                        <Ionicons name="checkmark-circle" size={18} color="#FFF" />
+                      </>
+                  }
+                </LinearGradient>
+              </TouchableOpacity>
+            </ScrollView>
+          )}
+
+          <TouchableOpacity onPress={onClose} style={rStyles.cancelBtn} activeOpacity={0.7}>
+            <Text style={rStyles.cancelText}>Cancel</Text>
+          </TouchableOpacity>
+        </Animated.View>
+      </View>
+    </Modal>
+  );
+}
+
 // ─── Main Screen ───────────────────────────────────────────────────────────────
 
 export default function AppointmentsScreen() {
@@ -460,6 +738,7 @@ export default function AppointmentsScreen() {
   const [rescheduleTarget, setRescheduleTarget] = useState<Appointment | null>(null);
   const [notesTarget, setNotesTarget] = useState<Appointment | null>(null);
   const [successData, setSuccessData] = useState<{ msg: string; dateStr: string; teacher: string } | null>(null);
+  const [scheduleVisible, setScheduleVisible] = useState(false);
 
   useEffect(() => { fetchAppointments(); }, [schoolId]);
 
@@ -475,11 +754,12 @@ export default function AppointmentsScreen() {
       setAppointments(
         (data ?? []).map((row: any) => ({
           id: row.id,
-          parent_name: row.parent_name ?? 'Parent',
-          parent_id: row.parent_id ?? '',
-          teacher_name: row.teacher_name ?? 'Teacher',
-          teacher_id: row.teacher_id ?? '',
-          student_name: row.student_name ?? 'Student',
+          meeting_type: row.meeting_type ?? 'parent_teacher',
+          parent_name: row.parent_name ?? null,
+          parent_id: row.parent_id ?? null,
+          teacher_name: row.teacher_name ?? null,
+          teacher_id: row.teacher_id ?? null,
+          student_name: row.student_name ?? '',
           date: row.date,
           time_slot: row.time_slot ?? '10:00 AM',
           topic: row.topic ?? '',
@@ -506,7 +786,7 @@ export default function AppointmentsScreen() {
   async function handleConfirm(appt: Appointment) {
     await supabase.from('appointments').update({ status: 'confirmed' }).eq('id', appt.id);
     setAppointments((prev) => prev.map((a) => a.id === appt.id ? { ...a, status: 'confirmed' } : a));
-    Alert.alert('Confirmed', `Meeting with ${appt.parent_name} confirmed.`);
+    Alert.alert('Confirmed', `Meeting with ${otherPartyLabel(appt)} confirmed.`);
   }
 
   async function handleRescheduleSubmit(date: string, slot: string, reason: string) {
@@ -522,9 +802,9 @@ export default function AppointmentsScreen() {
       weekday: 'short', day: 'numeric', month: 'short', year: 'numeric',
     });
     const successDate = `${dateLabel} at ${slot.split('–')[0].trim()}`;
-    const teacher = rescheduleTarget.teacher_name;
+    const other = otherPartyLabel(rescheduleTarget);
     setRescheduleTarget(null);
-    setSuccessData({ msg: 'Reschedule Requested!', dateStr: successDate, teacher });
+    setSuccessData({ msg: 'Reschedule Requested!', dateStr: successDate, teacher: other });
     fetchAppointments();
   }
 
@@ -559,10 +839,10 @@ export default function AppointmentsScreen() {
         <TouchableOpacity onPress={() => router.back()} style={styles.backBtn} activeOpacity={0.7}>
           <Ionicons name="chevron-back" size={22} color={AppColors.textPrimary} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>My Appointments</Text>
-        <View style={styles.calIconWrap}>
-          <Ionicons name="calendar-outline" size={22} color="#7B6FE8" />
-        </View>
+        <Text style={styles.headerTitle}>Appointments</Text>
+        <TouchableOpacity style={styles.calIconWrap} onPress={() => setScheduleVisible(true)} activeOpacity={0.7}>
+          <Ionicons name="add" size={24} color="#7B6FE8" />
+        </TouchableOpacity>
       </View>
 
       {/* Tab Toggle */}
@@ -648,6 +928,16 @@ export default function AppointmentsScreen() {
           onDone={() => setSuccessData(null)}
         />
       )}
+      <ScheduleModal
+        visible={scheduleVisible}
+        schoolId={schoolId}
+        onClose={() => setScheduleVisible(false)}
+        onScheduled={() => {
+          setScheduleVisible(false);
+          fetchAppointments();
+          Alert.alert('Meeting Scheduled', 'The meeting has been confirmed for both parties.');
+        }}
+      />
     </SafeAreaView>
   );
 }
@@ -933,6 +1223,7 @@ const rStyles = StyleSheet.create({
   dropItemActive: { backgroundColor: '#F3F0FF' },
   dropItemText: { fontSize: AppFonts.sizeMedium, color: AppColors.textSecondary },
   dropItemTextActive: { color: '#7B6FE8', fontWeight: AppFonts.semiBold },
+  emptyDropText: { padding: 16, fontSize: AppFonts.sizeMedium, color: AppColors.textTertiary, textAlign: 'center' },
   reasonInput: {
     backgroundColor: '#F8F7FF',
     borderRadius: 16,

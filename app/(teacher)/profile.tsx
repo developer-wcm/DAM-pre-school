@@ -419,6 +419,20 @@ export default function TeacherProfileScreen() {
               <Text style={styles.menuBadge}>Send to Parents</Text>
               <Ionicons name="chevron-forward" size={18} color={COLORS.textLight} />
             </TouchableOpacity>
+
+            <View style={styles.menuDivider} />
+
+            <TouchableOpacity
+              style={styles.menuRow}
+              activeOpacity={0.7}
+              onPress={() => router.push('/teacher-appointments')}
+            >
+              <View style={[styles.menuIcon, { backgroundColor: COLORS.primarySoft }]}>
+                <Ionicons name="calendar" size={18} color={COLORS.primary} />
+              </View>
+              <Text style={styles.menuLabel}>Appointments</Text>
+              <Ionicons name="chevron-forward" size={18} color={COLORS.textLight} />
+            </TouchableOpacity>
           </View>
         </View>
 

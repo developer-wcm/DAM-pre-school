@@ -14,9 +14,11 @@ interface Teacher {
   role: string;
 }
 
+type MeetWith = 'teacher' | 'admin';
+
 interface Appointment {
   id: string;
-  teacher_id: string;
+  teacher_id: string | null;
   teacherName: string;
   teacherAvatar: string;
   subject: string;
@@ -25,6 +27,7 @@ interface Appointment {
   time: string;
   topic: string;
   status: 'requested' | 'confirmed' | 'rescheduled' | 'cancelled' | 'completed';
+  meetingType: 'parent_teacher' | 'parent_admin';
 }
 
 function formatDateForDisplay(isoDate: string): string {
@@ -46,6 +49,7 @@ export default function ParentAppointmentsScreen() {
 
   const [activeTab, setActiveTab] = useState<'upcoming' | 'past'>('upcoming');
   const [showBookingModal, setShowBookingModal] = useState(false);
+  const [meetWith, setMeetWith] = useState<MeetWith>('teacher');
   const [selectedTeacher, setSelectedTeacher] = useState<Teacher | null>(null);
   const [selectedDate, setSelectedDate] = useState('');
   const [selectedTime, setSelectedTime] = useState('');
@@ -92,7 +96,7 @@ export default function ParentAppointmentsScreen() {
     setLoadingAppointments(true);
     const { data, error } = await supabase
       .from('appointments')
-      .select('id, teacher_id, teacher_name, date, time_slot, topic, status')
+      .select('id, teacher_id, teacher_name, date, time_slot, topic, status, meeting_type')
       .eq('parent_id', user.id)
       .order('date', { ascending: true });
 
@@ -101,14 +105,15 @@ export default function ParentAppointmentsScreen() {
         data.map((row: any) => ({
           id: row.id,
           teacher_id: row.teacher_id,
-          teacherName: row.teacher_name,
-          teacherAvatar: '👩‍🏫',
-          subject: 'Teacher',
+          teacherName: row.meeting_type === 'parent_admin' ? 'Admin / Principal' : (row.teacher_name ?? 'Teacher'),
+          teacherAvatar: row.meeting_type === 'parent_admin' ? '🛡️' : '👩‍🏫',
+          subject: row.meeting_type === 'parent_admin' ? 'Admin / Principal' : 'Teacher',
           date: formatDateForDisplay(row.date),
           date_iso: row.date,
           time: row.time_slot,
           topic: row.topic,
           status: row.status,
+          meetingType: row.meeting_type ?? 'parent_teacher',
         }))
       );
     }
@@ -129,7 +134,11 @@ export default function ParentAppointmentsScreen() {
 
   // ── Book appointment ────────────────────────────────────────────────────────
   const handleBookAppointment = async () => {
-    if (!selectedTeacher || !selectedDate || !selectedTime || !topic.trim()) {
+    if (meetWith === 'teacher' && !selectedTeacher) {
+      setErrorMessage('Please select a teacher');
+      return;
+    }
+    if (!selectedDate || !selectedTime || !topic.trim()) {
       setErrorMessage('Please fill in all fields');
       return;
     }
@@ -143,10 +152,12 @@ export default function ParentAppointmentsScreen() {
     setBooking(true);
     const { error } = await supabase.from('appointments').insert({
       school_id: profile.school_id,
+      meeting_type: meetWith === 'admin' ? 'parent_admin' : 'parent_teacher',
+      requester_role: 'parent',
       parent_id: user.id,
       parent_name: profile.full_name ?? '',
-      teacher_id: selectedTeacher.id,
-      teacher_name: selectedTeacher.full_name,
+      teacher_id: meetWith === 'teacher' ? selectedTeacher!.id : null,
+      teacher_name: meetWith === 'teacher' ? selectedTeacher!.full_name : null,
       student_name: '',
       date: dateISO,
       time_slot: selectedTime,
@@ -162,7 +173,7 @@ export default function ParentAppointmentsScreen() {
 
     setShowBookingModal(false);
     setConfirmationData({
-      teacherName: selectedTeacher.full_name,
+      teacherName: meetWith === 'admin' ? 'Admin / Principal' : selectedTeacher!.full_name,
       date: selectedDate,
       time: selectedTime,
       topic: topic.trim(),
@@ -212,6 +223,7 @@ export default function ParentAppointmentsScreen() {
       setSelectedDate('');
       setSelectedTime('');
       setTopic('');
+      setMeetWith('teacher');
     }
     if (confirmationData?.type === 'reschedule') {
       setSelectedAppointment(null);
@@ -417,7 +429,31 @@ export default function ParentAppointmentsScreen() {
             </View>
 
             <ScrollView showsVerticalScrollIndicator={false}>
+              {/* Meet With */}
+              <View style={styles.formGroup}>
+                <Text style={styles.formLabel}>Meet With</Text>
+                <View style={styles.meetWithRow}>
+                  <TouchableOpacity
+                    style={[styles.meetWithOption, meetWith === 'teacher' && styles.meetWithOptionActive]}
+                    onPress={() => { setMeetWith('teacher'); setErrorMessage(''); }}
+                    activeOpacity={0.85}
+                  >
+                    <Ionicons name="school-outline" size={18} color={meetWith === 'teacher' ? COLORS.white : COLORS.primary} />
+                    <Text style={[styles.meetWithText, meetWith === 'teacher' && styles.meetWithTextActive]}>Teacher</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.meetWithOption, meetWith === 'admin' && styles.meetWithOptionActive]}
+                    onPress={() => { setMeetWith('admin'); setErrorMessage(''); }}
+                    activeOpacity={0.85}
+                  >
+                    <Ionicons name="shield-checkmark-outline" size={18} color={meetWith === 'admin' ? COLORS.white : COLORS.primary} />
+                    <Text style={[styles.meetWithText, meetWith === 'admin' && styles.meetWithTextActive]}>Admin / Principal</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+
               {/* Select Teacher */}
+              {meetWith === 'teacher' && (
               <View style={styles.formGroup}>
                 <Text style={styles.formLabel}>Select Teacher</Text>
                 {loadingTeachers ? (
@@ -449,6 +485,7 @@ export default function ParentAppointmentsScreen() {
                   </View>
                 )}
               </View>
+              )}
 
               {/* Select Date */}
               <View style={styles.formGroup}>
@@ -842,6 +879,36 @@ const styles = StyleSheet.create({
   },
   textArea: {
     minHeight: 80,
+  },
+
+  // Meet With Toggle
+  meetWithRow: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  meetWithOption: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: COLORS.offWhite,
+    borderRadius: 12,
+    paddingVertical: 14,
+    borderWidth: 2,
+    borderColor: 'transparent',
+  },
+  meetWithOptionActive: {
+    backgroundColor: COLORS.primary,
+    borderColor: COLORS.primary,
+  },
+  meetWithText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: COLORS.primary,
+  },
+  meetWithTextActive: {
+    color: COLORS.white,
   },
 
   // Teacher Selector

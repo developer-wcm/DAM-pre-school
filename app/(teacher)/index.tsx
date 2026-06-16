@@ -36,6 +36,7 @@ type TeacherProfile = {
   full_name: string;
   assigned_class: string | null;
   assigned_section: string | null;
+  school_id: string | null;
 };
 
 // ─── Quick Remarks ────────────────────────────────────────────────────────────
@@ -109,7 +110,7 @@ export default function TeacherClassScreen() {
       // 2. Fetch teacher's profile (includes assigned_class)
       const { data: profile, error: profileErr } = await supabase
         .from('profiles')
-        .select('id, full_name, assigned_class, assigned_section')
+        .select('id, full_name, assigned_class, assigned_section, school_id')
         .eq('id', user.id)
         .single();
 
@@ -211,7 +212,9 @@ export default function TeacherClassScreen() {
 
       const { error } = await supabase.from('student_remarks').insert({
         student_id: selectedStudent.id,
+        school_id: teacher?.school_id ?? null,
         sent_by: user.id,
+        sender_name: teacher?.full_name ?? 'Teacher',
         sender_role: 'teacher',
         message: remarkText.trim(),
         is_read: false,

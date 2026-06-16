@@ -9,7 +9,8 @@ type ActivityType =
   | 'payment_received'
   | 'attendance_marked'
   | 'announcement_posted'
-  | 'holiday_added';
+  | 'holiday_added'
+  | 'data_deletion_requested';
 
 const ACTIVITY_CONFIG: Record<ActivityType, { icon: string; color: string; dotColor: string }> = {
   student_enrolled:   { icon: '🎒', color: '#E8F4FB', dotColor: '#3498DB' },
@@ -21,6 +22,7 @@ const ACTIVITY_CONFIG: Record<ActivityType, { icon: string; color: string; dotCo
   attendance_marked:  { icon: '✅', color: '#D4F4E8', dotColor: '#2A9D6E' },
   announcement_posted:{ icon: '📢', color: '#E8E4F8', dotColor: '#7B6FE8' },
   holiday_added:      { icon: '🗓️', color: '#FDF6E3', dotColor: '#DAA520' },
+  data_deletion_requested: { icon: '🗑️', color: '#FFE4E4', dotColor: '#E05A5A' },
 };
 
 export async function logActivity(

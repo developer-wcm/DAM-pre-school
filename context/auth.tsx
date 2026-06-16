@@ -16,7 +16,6 @@ interface Profile {
   role: UserRole;
   school_id: string | null;
   approved: boolean;
-  code_verified?: boolean;
 }
 
 interface AuthContextType {
@@ -33,7 +32,6 @@ interface AuthContextType {
   ) => Promise<{ error: string | null }>;
   signInWithGoogle: () => Promise<{ error: string | null }>;
   signOut: () => Promise<void>;
-  markCodeVerified: () => Promise<{ error: string | null }>;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
@@ -66,8 +64,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     const publicScreens = [
       undefined, 'index', 'login', 'sign-up',
-      'role-selection', 'find-school', 'parental-consent',
-      'approval-pending', 'account-pending', 'privacy-notice', 'auth', 'enter-code',
+      'role-selection', 'find-school',
+      'account-pending', 'privacy-notice', 'auth',
       'auth-callback',
     ];
     const onPublicScreen = publicScreens.includes(segments[0] as any);
@@ -86,7 +84,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (session && user) {
         setTimeout(async () => {
           const p = await fetchProfile(user.id);
-          if (!p) {
+          if (p) {
+            // Profile finally loaded (e.g. the sign-up trigger had latency on
+            // a fresh APK install). Update state so this guard re-runs and
+            // performs the proper role-based redirect.
+            setProfile(p);
+          } else {
             router.replace('/account-pending');
           }
         }, 1000);
@@ -96,6 +99,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     const redirectTarget = getAuthRedirectTarget(profile);
     if (!redirectTarget) {
+      return;
+    }
+
+    // Standalone screens an approved user can open from their dashboard.
+    // These live at the app root (not inside a role group), so the redirect
+    // logic below must not bounce the user back to their home group.
+    const sharedAuthedScreens = ['parent-appointments', 'teacher-appointments'];
+    if (sharedAuthedScreens.includes(firstSegment as string)) {
       return;
     }
 
@@ -114,14 +125,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return;
       }
       router.replace('/account-pending');
-      return;
-    }
-
-    if (redirectTarget === '/enter-code') {
-      if (cleanSegment === 'enter-code') {
-        return;
-      }
-      router.replace('/enter-code');
       return;
     }
 
@@ -241,27 +244,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return { error: null };
   }
 
-  async function markCodeVerified(): Promise<{ error: string | null }> {
-    if (!user?.id) {
-      return { error: 'No signed-in user found.' };
-    }
-
-    const { error } = await supabase
-      .from('profiles')
-      .update({ code_verified: true })
-      .eq('id', user.id);
-
-    if (error) {
-      return { error: error.message };
-    }
-
-    setProfile((current) => (
-      current ? { ...current, code_verified: true } : current
-    ));
-
-    return { error: null };
-  }
-
   // ── Google OAuth ──────────────────────────────────────────────────────────
   async function signInWithGoogle(): Promise<{ error: string | null }> {
     try {
@@ -365,7 +347,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   return (
     <AuthContext.Provider value={{
       session, user, profile, loading,
-      signInWithEmail, signUpWithEmail, signInWithGoogle, signOut, markCodeVerified,
+      signInWithEmail, signUpWithEmail, signInWithGoogle, signOut,
     }}>
       {children}
     </AuthContext.Provider>

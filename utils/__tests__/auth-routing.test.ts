@@ -28,21 +28,20 @@ describe('getAuthRedirectTarget', () => {
     ).toBe('/account-pending');
   });
 
-  it('routes approved teachers to the verification screen', () => {
+  it('routes approved teachers to the teacher group', () => {
     expect(
       getAuthRedirectTarget({
         role: 'teacher',
         approved: true,
       })
-    ).toBe('/enter-code');
+    ).toBe('/(teacher)');
   });
 
-  it('routes verified parents to the parent group', () => {
+  it('routes approved parents to the parent group', () => {
     expect(
       getAuthRedirectTarget({
         role: 'parent',
         approved: true,
-        code_verified: true,
       })
     ).toBe('/(parent)');
   });
