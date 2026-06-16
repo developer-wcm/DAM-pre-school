@@ -104,6 +104,13 @@ export default function DashboardLayout() {
         }}
       />
       <Tabs.Screen
+        name="staff-attendance-report"
+        options={{
+          href: null,
+          tabBarStyle: { display: 'none' },
+        }}
+      />
+      <Tabs.Screen
         name="staff-management"
         options={{
           href: null,

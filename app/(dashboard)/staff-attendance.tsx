@@ -26,7 +26,16 @@ type StaffRecord = {
   full_name: string | null;
   role: string;
   attendance: StaffAttendanceStatus;
+  markedTime: string | null;
 };
+
+/** Format an ISO timestamp as a short local time like "9:42 AM". */
+function formatTime(value: string | null): string | null {
+  if (!value) return null;
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', hour12: true });
+}
 
 const MARK_OPTIONS: { status: StaffMarkStatus; label: string; color: string; light: string }[] = [
   { status: 'present', label: 'P', color: COLORS.success, light: COLORS.successLight },
@@ -77,7 +86,7 @@ export default function StaffAttendanceScreen() {
         supabase.rpc('get_staff_profiles'),
         supabase
           .from('staff_attendance')
-          .select('staff_id, status')
+          .select('staff_id, status, marked_at')
           .eq('school_id', schoolId)
           .eq('date', selectedDateKey),
       ]);
@@ -86,19 +95,25 @@ export default function StaffAttendanceScreen() {
       if (attendanceRes.error) throw attendanceRes.error;
 
       const attendanceMap = new Map(
-        (attendanceRes.data ?? []).map((record: { staff_id: string; status: string }) => [
-          record.staff_id,
-          record.status as StaffAttendanceStatus,
-        ])
+        (attendanceRes.data ?? []).map(
+          (record: { staff_id: string; status: string; marked_at: string | null }) => [
+            record.staff_id,
+            { status: record.status as StaffAttendanceStatus, time: formatTime(record.marked_at) },
+          ]
+        )
       );
 
       const nextStaff = (staffRes.data ?? []).map(
-        (member: { id: string; full_name: string | null; role: string }) => ({
-          id: member.id,
-          full_name: member.full_name,
-          role: member.role,
-          attendance: attendanceMap.get(member.id) ?? 'not-marked',
-        })
+        (member: { id: string; full_name: string | null; role: string }) => {
+          const rec = attendanceMap.get(member.id);
+          return {
+            id: member.id,
+            full_name: member.full_name,
+            role: member.role,
+            attendance: rec?.status ?? 'not-marked',
+            markedTime: rec?.time ?? null,
+          };
+        }
       );
 
       setStaff(nextStaff);
@@ -132,7 +147,11 @@ export default function StaffAttendanceScreen() {
       if (member.attendance === status) return;
 
       const previous = member.attendance;
-      setStaff((prev) => prev.map((s) => (s.id === member.id ? { ...s, attendance: status } : s)));
+      const previousTime = member.markedTime;
+      const nowTime = formatTime(new Date().toISOString());
+      setStaff((prev) =>
+        prev.map((s) => (s.id === member.id ? { ...s, attendance: status, markedTime: nowTime } : s))
+      );
       setSavingId(member.id);
 
       const { error } = await markStaffAttendance({
@@ -147,7 +166,11 @@ export default function StaffAttendanceScreen() {
       setSavingId(null);
       if (error) {
         // Roll back optimistic change
-        setStaff((prev) => prev.map((s) => (s.id === member.id ? { ...s, attendance: previous } : s)));
+        setStaff((prev) =>
+          prev.map((s) =>
+            s.id === member.id ? { ...s, attendance: previous, markedTime: previousTime } : s
+          )
+        );
         Alert.alert('Error', mapStaffAttendanceError(error));
       }
     },
@@ -176,8 +199,15 @@ export default function StaffAttendanceScreen() {
           onPress: async () => {
             setBulkSaving(true);
             const snapshot = staff;
+            const nowTime = formatTime(new Date().toISOString());
             // Optimistic: everyone present
-            setStaff((prev) => prev.map((s) => ({ ...s, attendance: 'present' as StaffAttendanceStatus })));
+            setStaff((prev) =>
+              prev.map((s) =>
+                s.attendance === 'present'
+                  ? s
+                  : { ...s, attendance: 'present' as StaffAttendanceStatus, markedTime: nowTime }
+              )
+            );
 
             const results = await Promise.all(
               unmarkedOrNot.map((member) =>
@@ -227,7 +257,10 @@ export default function StaffAttendanceScreen() {
           </View>
           <View style={styles.staffMeta}>
             <Text style={styles.staffName} numberOfLines={1}>{item.full_name ?? 'Unknown'}</Text>
-            <Text style={styles.staffRole}>{item.role.replace(/^(.)/, (m) => m.toUpperCase())}</Text>
+            <Text style={styles.staffRole}>
+              {item.role.replace(/^(.)/, (m) => m.toUpperCase())}
+              {item.attendance !== 'not-marked' && item.markedTime ? ` · ${item.markedTime}` : ''}
+            </Text>
           </View>
         </View>
 

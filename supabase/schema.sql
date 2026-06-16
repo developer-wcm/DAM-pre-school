@@ -102,7 +102,11 @@ create policy "admins can manage staff attendance"
   on public.staff_attendance for all
   using (school_id in (
     select school_id from public.profiles
-    where id = auth.uid() and role in ('admin', 'teacher')
+    where id = auth.uid() and role in ('admin', 'principal', 'teacher')
+  ))
+  with check (school_id in (
+    select school_id from public.profiles
+    where id = auth.uid() and role in ('admin', 'principal', 'teacher')
   ));
 
 -- 4. FEES TABLE
