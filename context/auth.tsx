@@ -72,7 +72,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const onPublicScreen = publicScreens.includes(segments[0] as any);
     const firstSegment = segments[0] as string | undefined;
 
-    if (firstSegment === 'index' || firstSegment === undefined || firstSegment === 'auth-callback') {
+    if (firstSegment === 'index' || firstSegment === undefined) {
       return;
     }
 
