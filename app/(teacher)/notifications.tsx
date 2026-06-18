@@ -1,15 +1,15 @@
 // =============================================================
-// Admin / Principal – Notification Center
+// Teacher – Notification Center
 // =============================================================
 
 import NotificationCenterScreen from '../../components/NotificationCenterScreen'
 
-export default function AdminNotificationsScreen() {
+export default function TeacherNotificationsScreen() {
   return (
     <NotificationCenterScreen
-      role="admin"
+      role="teacher"
       title="Notifications"
-      backTarget="/(dashboard)"
+      backTarget="/(teacher)"
     />
   )
 }

@@ -345,6 +345,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   // ── Sign Out ──────────────────────────────────────────────────────────────
   async function signOut() {
+    // Deactivate push token before clearing local state so we still have the
+    // user ID available for the DB update.
+    if (user?.id) {
+      await supabase
+        .from('push_tokens')
+        .update({ is_active: false })
+        .eq('user_id', user.id)
+        .then(() => {}) // fire-and-forget; ignore errors
+    }
     setSession(null);
     setUser(null);
     setProfile(null);

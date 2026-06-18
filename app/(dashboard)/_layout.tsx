@@ -1,18 +1,22 @@
-import { Ionicons } from '@expo/vector-icons';
-import { Tabs } from 'expo-router';
-import { Platform, StyleSheet, View } from 'react-native';
-import { AppColors, AppShadows } from '../../constants/theme';
+import { Ionicons } from '@expo/vector-icons'
+import { Tabs } from 'expo-router'
+import { Platform, StyleSheet, View } from 'react-native'
+import { AppColors, AppShadows } from '../../constants/theme'
+import { useNotifications } from '../../context/notifications'
 
 export default function DashboardLayout() {
+  const { unreadCount } = useNotifications()
+  const badge = unreadCount > 0 ? String(Math.min(unreadCount, 99)) : undefined
+
   return (
     <Tabs
       screenOptions={{
-        headerShown: false,
-        tabBarStyle: styles.tabBar,
+        headerShown:          false,
+        tabBarStyle:          styles.tabBar,
         tabBarActiveTintColor: '#4F46E5',
         tabBarInactiveTintColor: AppColors.textSecondary,
-        tabBarShowLabel: true,
-        tabBarLabelStyle: styles.tabLabel,
+        tabBarShowLabel:      true,
+        tabBarLabelStyle:     styles.tabLabel,
       }}
     >
       <Tabs.Screen
@@ -21,11 +25,7 @@ export default function DashboardLayout() {
           title: 'Dashboard',
           tabBarIcon: ({ color, focused }) => (
             <View style={[styles.iconContainer, focused && styles.iconContainerActive]}>
-              <Ionicons
-                name={focused ? 'grid' : 'grid-outline'}
-                size={20}
-                color={focused ? '#0f1869' : color}
-              />
+              <Ionicons name={focused ? 'grid' : 'grid-outline'} size={20} color={focused ? '#0f1869' : color} />
             </View>
           ),
         }}
@@ -36,11 +36,7 @@ export default function DashboardLayout() {
           title: 'Students',
           tabBarIcon: ({ color, focused }) => (
             <View style={[styles.iconContainer, focused && styles.iconContainerActive]}>
-              <Ionicons
-                name={focused ? 'school' : 'school-outline'}
-                size={20}
-                color={focused ? '#0f1869' : color}
-              />
+              <Ionicons name={focused ? 'school' : 'school-outline'} size={20} color={focused ? '#0f1869' : color} />
             </View>
           ),
         }}
@@ -51,8 +47,21 @@ export default function DashboardLayout() {
           title: 'Fees',
           tabBarIcon: ({ color, focused }) => (
             <View style={[styles.iconContainer, focused && styles.iconContainerActive]}>
+              <Ionicons name={focused ? 'wallet' : 'wallet-outline'} size={20} color={focused ? '#0f1869' : color} />
+            </View>
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="notifications"
+        options={{
+          title:          'Alerts',
+          tabBarBadge:    badge,
+          tabBarBadgeStyle: styles.badge,
+          tabBarIcon: ({ color, focused }) => (
+            <View style={[styles.iconContainer, focused && styles.iconContainerActive]}>
               <Ionicons
-                name={focused ? 'wallet' : 'wallet-outline'}
+                name={focused ? 'notifications' : 'notifications-outline'}
                 size={20}
                 color={focused ? '#0f1869' : color}
               />
@@ -66,149 +75,69 @@ export default function DashboardLayout() {
           title: 'More',
           tabBarIcon: ({ color, focused }) => (
             <View style={[styles.iconContainer, focused && styles.iconContainerActive]}>
-              <Ionicons 
-                name={focused ? 'apps' : 'apps-outline'} 
-                size={21} 
-                color={focused ? '#0f1869' : color} 
-              />
+              <Ionicons name={focused ? 'apps' : 'apps-outline'} size={21} color={focused ? '#0f1869' : color} />
             </View>
           ),
         }}
       />
-      {/* Hide stack screens from tab bar */}
-      {/* Hide the admission stack from the tab bar */}
-      <Tabs.Screen
-        name="admission"
-        options={{
-          href: null,
-        }}
-      />
-      <Tabs.Screen
-        name="student-profile"
-        options={{
-          href: null,
-        }}
-      />
-      <Tabs.Screen
-        name="attendance"
-        options={{
-          href: null,
-          tabBarStyle: { display: 'none' },
-        }}
-      />
-      <Tabs.Screen
-        name="staff-attendance"
-        options={{
-          href: null,
-          tabBarStyle: { display: 'none' },
-        }}
-      />
-      <Tabs.Screen
-        name="staff-attendance-report"
-        options={{
-          href: null,
-          tabBarStyle: { display: 'none' },
-        }}
-      />
-      <Tabs.Screen
-        name="staff-management"
-        options={{
-          href: null,
-          tabBarStyle: { display: 'none' },
-        }}
-      />
-      <Tabs.Screen
-        name="events-calendar"
-        options={{
-          href: null,
-        }}
-      />
-      <Tabs.Screen
-        name="notifications"
-        options={{ href: null }}
-      />
-      <Tabs.Screen
-        name="outstanding-fees"
-        options={{ href: null }}
-      />
-      <Tabs.Screen
-        name="record-payment"
-        options={{ href: null }}
-      />
-      <Tabs.Screen
-        name="admin-profile"
-        options={{ href: null }}
-      />
-      <Tabs.Screen
-        name="user-management"
-        options={{ href: null }}
-      />
-      <Tabs.Screen
-        name="leave-requests"
-        options={{ href: null }}
-      />
-      <Tabs.Screen
-        name="jotform"
-        options={{ href: null, tabBarStyle: { display: 'none' } }}
-      />
-      <Tabs.Screen
-        name="student-progress"
-        options={{ href: null }}
-      />
-      <Tabs.Screen
-        name="csv-upload"
-        options={{ href: null, tabBarStyle: { display: 'none' } }}
-      />
-      <Tabs.Screen
-        name="system-settings"
-        options={{ href: null }}
-      />
-      <Tabs.Screen
-        name="data-export"
-        options={{ href: null }}
-      />
-      <Tabs.Screen
-        name="appointments"
-        options={{ href: null }}
-      />
-      <Tabs.Screen
-        name="data-deletion"
-        options={{ href: null }}
-      />
+
+      {/* ── Hidden from tab bar ───────────────────────────────── */}
+      <Tabs.Screen name="admission"              options={{ href: null }} />
+      <Tabs.Screen name="student-profile"        options={{ href: null }} />
+      <Tabs.Screen name="attendance"             options={{ href: null, tabBarStyle: { display: 'none' } }} />
+      <Tabs.Screen name="staff-attendance"       options={{ href: null, tabBarStyle: { display: 'none' } }} />
+      <Tabs.Screen name="staff-attendance-report" options={{ href: null, tabBarStyle: { display: 'none' } }} />
+      <Tabs.Screen name="staff-management"       options={{ href: null, tabBarStyle: { display: 'none' } }} />
+      <Tabs.Screen name="events-calendar"        options={{ href: null }} />
+      <Tabs.Screen name="outstanding-fees"       options={{ href: null }} />
+      <Tabs.Screen name="record-payment"         options={{ href: null }} />
+      <Tabs.Screen name="admin-profile"          options={{ href: null }} />
+      <Tabs.Screen name="user-management"        options={{ href: null }} />
+      <Tabs.Screen name="leave-requests"         options={{ href: null }} />
+      <Tabs.Screen name="jotform"                options={{ href: null, tabBarStyle: { display: 'none' } }} />
+      <Tabs.Screen name="student-progress"       options={{ href: null }} />
+      <Tabs.Screen name="csv-upload"             options={{ href: null, tabBarStyle: { display: 'none' } }} />
+      <Tabs.Screen name="system-settings"        options={{ href: null }} />
+      <Tabs.Screen name="data-export"            options={{ href: null }} />
+      <Tabs.Screen name="appointments"           options={{ href: null }} />
+      <Tabs.Screen name="data-deletion"          options={{ href: null }} />
     </Tabs>
-  );
+  )
 }
 
 const styles = StyleSheet.create({
   tabBar: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
+    position:      'absolute',
+    bottom:         0,
+    left:           0,
+    right:          0,
     backgroundColor: AppColors.white,
-    borderTopWidth: 0,
-    borderTopLeftRadius: 0,
-    borderTopRightRadius: 0,
-    height: Platform.OS === 'ios' ? 82 : 64,
-    paddingBottom: Platform.OS === 'ios' ? 22 : 9,
-    paddingTop: 8,
+    borderTopWidth:  0,
+    height:         Platform.OS === 'ios' ? 82 : 64,
+    paddingBottom:  Platform.OS === 'ios' ? 22 : 9,
+    paddingTop:      8,
     paddingHorizontal: 18,
     ...AppShadows.elevatedShadow,
   },
   iconContainer: {
-    width: 32,
-    height: 26,
-    borderRadius: 8,
+    width:          32,
+    height:         26,
+    borderRadius:    8,
     justifyContent: 'center',
-    alignItems: 'center',
+    alignItems:     'center',
   },
   iconContainerActive: {
     backgroundColor: 'transparent',
   },
   tabLabel: {
-    fontSize: 8,
+    fontSize:   8,
     fontWeight: '800',
-    marginTop: 0,
+    marginTop:   0,
     marginBottom: 0,
   },
-});
+  badge: {
+    backgroundColor: '#E74C3C',
+    fontSize:        10,
+    fontWeight:      '700',
+  },
+})
