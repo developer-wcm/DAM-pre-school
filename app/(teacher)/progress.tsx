@@ -1,10 +1,26 @@
-import { COLORS } from '@/constants/admissionTheme';
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { getSkillsForClass, SKILL_LEVELS, type Skill, type SkillLevel } from '../../constants/progressSkills';
+import { mergeSkillsWithSaved } from '../../lib/progress';
 import { supabase } from '../../lib/supabase';
+
+// ─── Theme ────────────────────────────────────────────────────────────────────
+const C = {
+  navy:       '#1E3A5F',
+  navyLight:  '#2C5282',
+  navySoft:   '#E8EDF5',
+  gold:       '#DAA520',
+  bg:         '#F0F4F8',
+  white:      '#FFFFFF',
+  textPrimary:'#1A1A2E',
+  textSecond: '#5A6C7D',
+  textLight:  '#8B95A1',
+  border:     '#E2E8F0',
+  card:       '#FFFFFF',
+};
 
 type Term = 'term1' | 'term2' | 'term3';
 
@@ -24,24 +40,53 @@ export default function TeacherProgressScreen() {
   const [observationNotes, setObservationNotes] = useState('');
   const [loadingStudents, setLoadingStudents] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [loadingProgress, setLoadingProgress] = useState(false);
 
+  // ── Load saved progress for a student+term from Supabase ──
+  const loadProgressForStudent = useCallback(async (student: Student, term: Term) => {
+    const defaults = getSkillsForClass(student.class);
+    setLoadingProgress(true);
+    try {
+      const { data } = await supabase
+        .from('student_progress')
+        .select('skills, observation_notes')
+        .eq('student_id', student.id)
+        .eq('term', term)
+        .maybeSingle();
+
+      if (data) {
+        let saved: Skill[] | null = null;
+        try {
+          saved = typeof data.skills === 'string' ? JSON.parse(data.skills) : data.skills;
+        } catch {}
+        setSkills(mergeSkillsWithSaved(defaults, saved));
+        setObservationNotes(data.observation_notes ?? '');
+      } else {
+        setSkills(defaults.map(sk => ({ ...sk })));
+        setObservationNotes('');
+      }
+    } catch {
+      setSkills(defaults.map(sk => ({ ...sk })));
+      setObservationNotes('');
+    } finally {
+      setLoadingProgress(false);
+    }
+  }, []);
+
+  // ── Initial load: fetch students then load progress for first student ──
   useEffect(() => {
     (async () => {
       try {
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) return;
 
-        // Get teacher's assigned class from profiles
         const { data: profile } = await supabase
           .from('profiles')
           .select('assigned_class, assigned_section')
           .eq('id', user.id)
           .single();
 
-        if (!profile?.assigned_class) {
-          setLoadingStudents(false);
-          return;
-        }
+        if (!profile?.assigned_class) { setLoadingStudents(false); return; }
 
         let query = supabase
           .from('students')
@@ -55,157 +100,187 @@ export default function TeacherProgressScreen() {
 
         const { data } = await query;
         const mapped: Student[] = (data ?? []).map((s: any) => ({
-          id: s.id,
-          name: s.full_name,
-          class: s.class,
+          id: s.id, name: s.full_name, class: s.class,
         }));
 
-        // Batch all state updates together — prevents flicker
         setStudents(mapped);
-        setSelectedStudent(mapped[0] ?? null);
-        setSkills(mapped.length > 0 ? getSkillsForClass(mapped[0].class) : []);
+        if (mapped.length > 0) {
+          setSelectedStudent(mapped[0]);
+          await loadProgressForStudent(mapped[0], 'term1');
+        }
       } catch (e) {
         console.warn('Progress: failed to load students', e);
       } finally {
         setLoadingStudents(false);
       }
     })();
-  }, []);
+  }, []);  // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Reload when term changes ──
+  useEffect(() => {
+    if (selectedStudent) {
+      loadProgressForStudent(selectedStudent, selectedTerm);
+    }
+  }, [selectedTerm]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const updateSkillLevel = (skillId: string, level: SkillLevel) => {
-    setSkills(skills.map(skill => 
-      skill.id === skillId ? { ...skill, level } : skill
-    ));
+    setSkills(skills.map(sk => sk.id === skillId ? { ...sk, level } : sk));
   };
 
-  const getLevelIndex = (level: SkillLevel): number => {
-    return SKILL_LEVELS.findIndex(l => l.value === level);
-  };
+  const getLevelIndex = (level: SkillLevel) =>
+    SKILL_LEVELS.findIndex(l => l.value === level);
 
-  const renderSkillCard = (skill: Skill) => (
-    <View key={skill.id} style={styles.skillCard}>
-      {/* Skill Header */}
-      <View style={styles.skillHeader}>
-        <Text style={styles.skillEmoji}>{skill.emoji}</Text>
-        <Text style={styles.skillName}>{skill.name}</Text>
-        {skill.required && (
-          <View style={styles.requiredBadge}>
-            <Text style={styles.requiredText}>*</Text>
+  const renderSkillCard = (skill: Skill) => {
+    const currentIdx = getLevelIndex(skill.level);
+    const currentLevelCfg = SKILL_LEVELS[currentIdx];
+
+    return (
+      <View key={skill.id} style={styles.skillCard}>
+        {/* Skill header */}
+        <View style={styles.skillHeader}>
+          <View style={[styles.skillEmojiWrap, { backgroundColor: currentLevelCfg.color + '18' }]}>
+            <Text style={styles.skillEmoji}>{skill.emoji}</Text>
           </View>
-        )}
-      </View>
-
-      {/* Progress Tracker */}
-      <View style={styles.progressTracker}>
-        {SKILL_LEVELS.map((levelOption, index) => {
-          const currentLevelIndex = getLevelIndex(skill.level);
-          const isActive = index <= currentLevelIndex;
-          const isCurrent = index === currentLevelIndex;
-
-          return (
-            <View key={levelOption.value} style={styles.progressStep}>
-              <TouchableOpacity
-                style={[
-                  styles.progressDot,
-                  isActive && styles.progressDotActive,
-                  isCurrent && styles.progressDotCurrent,
-                ]}
-                onPress={() => updateSkillLevel(skill.id, levelOption.value)}
-                activeOpacity={0.8}
-              >
-                {isActive && (
-                  <Ionicons 
-                    name={isCurrent ? "radio-button-on" : "checkmark"} 
-                    size={isCurrent ? 20 : 14} 
-                    color={COLORS.white} 
-                  />
-                )}
-              </TouchableOpacity>
-              <Text style={[
-                styles.progressLabel,
-                isCurrent && styles.progressLabelActive
-              ]}>
-                {levelOption.label}
-              </Text>
-              {index < SKILL_LEVELS.length - 1 && (
-                <View style={[
-                  styles.progressLine,
-                  isActive && index < currentLevelIndex && styles.progressLineActive
-                ]} />
-              )}
+          <Text style={styles.skillName}>{skill.name}</Text>
+          {skill.required && (
+            <View style={styles.requiredBadge}>
+              <Text style={styles.requiredText}>★</Text>
             </View>
-          );
-        })}
+          )}
+          {/* Current level pill */}
+          <View style={[styles.currentLevelPill, { backgroundColor: currentLevelCfg.color + '20' }]}>
+            <Text style={[styles.currentLevelText, { color: currentLevelCfg.color }]}>
+              {currentLevelCfg.label}
+            </Text>
+          </View>
+        </View>
+
+        {/* Progress tracker — each level uses its own color */}
+        <View style={styles.progressTracker}>
+          {SKILL_LEVELS.map((levelOpt, index) => {
+            const isActive = index <= currentIdx;
+            const isCurrent = index === currentIdx;
+            return (
+              <View key={levelOpt.value} style={styles.progressStep}>
+                <TouchableOpacity
+                  style={[
+                    styles.progressDot,
+                    isActive && { backgroundColor: levelOpt.color },
+                    isCurrent && styles.progressDotCurrent,
+                    isCurrent && { backgroundColor: levelOpt.color, shadowColor: levelOpt.color },
+                  ]}
+                  onPress={() => updateSkillLevel(skill.id, levelOpt.value)}
+                  activeOpacity={0.8}
+                >
+                  {isActive && (
+                    <Ionicons
+                      name={isCurrent ? 'radio-button-on' : 'checkmark'}
+                      size={isCurrent ? 20 : 14}
+                      color="#FFFFFF"
+                    />
+                  )}
+                </TouchableOpacity>
+                <Text style={[
+                  styles.progressLabel,
+                  isCurrent && { color: levelOpt.color, fontWeight: '700' },
+                ]}>
+                  {levelOpt.label}
+                </Text>
+                {index < SKILL_LEVELS.length - 1 && (
+                  <View style={[
+                    styles.progressLine,
+                    isActive && index < currentIdx && { backgroundColor: SKILL_LEVELS[index].color },
+                  ]} />
+                )}
+              </View>
+            );
+          })}
+        </View>
+
+        {/* Per-skill note */}
+        <View style={styles.skillNoteWrap}>
+          <Ionicons name="pencil-outline" size={13} color={C.textLight} style={{ marginTop: 2 }} />
+          <TextInput
+            style={styles.skillNoteInput}
+            placeholder="Add a note for this skill…"
+            placeholderTextColor={C.textLight}
+            value={skill.notes}
+            onChangeText={(text) =>
+              setSkills(prev => prev.map(sk => sk.id === skill.id ? { ...sk, notes: text } : sk))
+            }
+            multiline
+            textAlignVertical="top"
+          />
+        </View>
       </View>
-    </View>
-  );
+    );
+  };
+
+  // ── Group skills by category prefix ──
+  const skillsByCategory = skills.reduce<Record<string, Skill[]>>((acc, sk) => {
+    const prefix = sk.id.split('-')[0];
+    (acc[prefix] ??= []).push(sk);
+    return acc;
+  }, {});
+
+  const CATEGORY_META: Record<string, { label: string; emoji: string; color: string }> = {
+    lang:   { label: 'Language Literacy',     emoji: '📖', color: '#3498DB' },
+    gk:     { label: 'General Knowledge',     emoji: '🌍', color: '#9B59B6' },
+    num:    { label: 'Numerical Literacy',     emoji: '🔢', color: '#DAA520' },
+    rhyme:  { label: 'Rhymes & Songs',         emoji: '🎵', color: '#E91E63' },
+    part:   { label: 'Participation',          emoji: '🎯', color: '#F39C12' },
+    social: { label: 'Social Skills',          emoji: '🤝', color: '#2A9D6E' },
+    cog:    { label: 'Cognitive',              emoji: '🧠', color: C.navy     },
+    comm:   { label: 'Communication',          emoji: '🗣️', color: '#7B6FE8' },
+    motor:  { label: 'Motor Skills',           emoji: '🏃', color: '#E05A5A' },
+  };
 
   if (loadingStudents) {
     return (
-      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center', gap: 12 }]}>
-        <ActivityIndicator size="large" color={COLORS.primary} />
-        <Text style={{ fontSize: 14, color: COLORS.textSecondary, fontWeight: '600' }}>
-          Loading students...
-        </Text>
+      <View style={styles.loadingScreen}>
+        <ActivityIndicator size="large" color={C.navy} />
+        <Text style={styles.loadingText}>Loading students…</Text>
       </View>
     );
   }
 
   return (
     <View style={styles.container}>
-      {/* Header */}
-      <View style={styles.header}>
+      {/* ── Header ── */}
+      <LinearGradient colors={[C.navy, C.navyLight]} style={styles.header}>
         <TouchableOpacity style={styles.backButton} onPress={() => router.back()} activeOpacity={0.7}>
-          <Ionicons name="chevron-back" size={24} color={COLORS.textPrimary} />
+          <Ionicons name="chevron-back" size={22} color="#FFFFFF" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Record Progress</Text>
-        <View style={styles.headerSpacer} />
-      </View>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.headerTitle}>Record Progress</Text>
+          <Text style={styles.headerSub}>
+            {selectedStudent ? `${selectedStudent.name} · ${selectedStudent.class}` : 'Select a student'}
+          </Text>
+        </View>
+      </LinearGradient>
 
-      <ScrollView 
-        style={styles.scrollView}
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
-      >
-        {/* Term Selector */}
+      <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+
+        {/* ── Term Selector ── */}
         <View style={styles.termSelector}>
-          <TouchableOpacity
-            style={[styles.termButton, selectedTerm === 'term1' && styles.termButtonActive]}
-            onPress={() => setSelectedTerm('term1')}
-            activeOpacity={0.8}
-          >
-            <Text style={[styles.termText, selectedTerm === 'term1' && styles.termTextActive]}>
-              Term 1
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.termButton, selectedTerm === 'term2' && styles.termButtonActive]}
-            onPress={() => setSelectedTerm('term2')}
-            activeOpacity={0.8}
-          >
-            <Text style={[styles.termText, selectedTerm === 'term2' && styles.termTextActive]}>
-              Term 2
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.termButton, selectedTerm === 'term3' && styles.termButtonActive]}
-            onPress={() => setSelectedTerm('term3')}
-            activeOpacity={0.8}
-          >
-            <Text style={[styles.termText, selectedTerm === 'term3' && styles.termTextActive]}>
-              Term 3
-            </Text>
-          </TouchableOpacity>
+          {(['term1', 'term2', 'term3'] as Term[]).map((t, i) => (
+            <TouchableOpacity
+              key={t}
+              style={[styles.termButton, selectedTerm === t && styles.termButtonActive]}
+              onPress={() => setSelectedTerm(t)}
+              activeOpacity={0.8}
+            >
+              <Text style={[styles.termText, selectedTerm === t && styles.termTextActive]}>
+                Term {i + 1}
+              </Text>
+            </TouchableOpacity>
+          ))}
         </View>
 
-        {/* Student Selector */}
+        {/* ── Student Selector ── */}
         <View style={styles.section}>
           <Text style={styles.sectionLabel}>STUDENT</Text>
-          {loadingStudents ? (
-            <ActivityIndicator color={COLORS.primary} style={{ marginVertical: 12 }} />
-          ) : students.length === 0 ? (
+          {students.length === 0 ? (
             <View style={styles.emptyStudents}>
               <Text style={styles.emptyStudentsText}>No students in your class yet.</Text>
             </View>
@@ -216,22 +291,18 @@ export default function TeacherProgressScreen() {
                 onPress={() => setShowStudentDropdown(!showStudentDropdown)}
                 activeOpacity={0.8}
               >
-                <View style={styles.studentInfo}>
-                  <View style={styles.studentAvatar}>
-                    <Text style={styles.studentAvatarEmoji}>
+                <View style={styles.studentSelectorLeft}>
+                  <LinearGradient colors={[C.navy, C.navyLight]} style={styles.studentAvatar}>
+                    <Text style={styles.studentAvatarText}>
                       {selectedStudent ? selectedStudent.name.charAt(0).toUpperCase() : '?'}
                     </Text>
-                  </View>
-                  <View style={styles.studentDetails}>
+                  </LinearGradient>
+                  <View>
                     <Text style={styles.studentName}>{selectedStudent?.name ?? 'Select student'}</Text>
                     <Text style={styles.studentClass}>{selectedStudent?.class ?? ''}</Text>
                   </View>
                 </View>
-                <Ionicons
-                  name={showStudentDropdown ? 'chevron-up' : 'chevron-down'}
-                  size={20}
-                  color={COLORS.primary}
-                />
+                <Ionicons name={showStudentDropdown ? 'chevron-up' : 'chevron-down'} size={20} color={C.navy} />
               </TouchableOpacity>
 
               {showStudentDropdown && (
@@ -239,27 +310,26 @@ export default function TeacherProgressScreen() {
                   {students.map((student) => (
                     <TouchableOpacity
                       key={student.id}
-                      style={styles.dropdownItem}
+                      style={[styles.dropdownItem, selectedStudent?.id === student.id && styles.dropdownItemActive]}
                       onPress={() => {
                         setSelectedStudent(student);
-                        setSkills(getSkillsForClass(student.class));
                         setShowStudentDropdown(false);
+                        loadProgressForStudent(student, selectedTerm);
                       }}
                       activeOpacity={0.8}
                     >
-                      <View style={styles.studentInfo}>
-                        <View style={styles.studentAvatar}>
-                          <Text style={styles.studentAvatarEmoji}>
+                      <View style={styles.studentSelectorLeft}>
+                        <View style={[styles.studentAvatarSmall, selectedStudent?.id === student.id && { backgroundColor: C.navy }]}>
+                          <Text style={[styles.studentAvatarSmallText, selectedStudent?.id === student.id && { color: '#FFF' }]}>
                             {student.name.charAt(0).toUpperCase()}
                           </Text>
                         </View>
-                        <View style={styles.studentDetails}>
-                          <Text style={styles.studentName}>{student.name}</Text>
-                          <Text style={styles.studentClass}>{student.class}</Text>
-                        </View>
+                        <Text style={[styles.studentName, selectedStudent?.id === student.id && { color: C.navy }]}>
+                          {student.name}
+                        </Text>
                       </View>
                       {selectedStudent?.id === student.id && (
-                        <Ionicons name="checkmark" size={20} color={COLORS.primary} />
+                        <Ionicons name="checkmark-circle" size={18} color={C.navy} />
                       )}
                     </TouchableOpacity>
                   ))}
@@ -269,68 +339,47 @@ export default function TeacherProgressScreen() {
           )}
         </View>
 
-        {/* Skills Assessment */}
-        <View style={styles.skillsContainer}>
-          {/* Language Literacy Section */}
-          <View style={styles.categorySection}>
-            <Text style={styles.categoryTitle}>1. Language Literacy</Text>
-            {skills.slice(0, 2).map((skill) => renderSkillCard(skill))}
+        {/* ── Skills by Category ── */}
+        {loadingProgress ? (
+          <View style={styles.progressLoading}>
+            <ActivityIndicator size="small" color={C.navy} />
+            <Text style={styles.progressLoadingText}>Loading saved progress…</Text>
           </View>
+        ) : null}
+        {!loadingProgress && Object.entries(skillsByCategory).map(([prefix, catSkills]) => {
+          const meta = CATEGORY_META[prefix] ?? { label: prefix, emoji: '📌', color: C.textSecond };
+          return (
+            <View key={prefix} style={styles.categorySection}>
+              <View style={[styles.categoryHeader, { borderLeftColor: meta.color }]}>
+                <Text style={styles.categoryEmoji}>{meta.emoji}</Text>
+                <Text style={[styles.categoryTitle, { color: meta.color }]}>{meta.label}</Text>
+              </View>
+              {catSkills.map((skill) => renderSkillCard(skill))}
+            </View>
+          );
+        })}
 
-          {/* General Knowledge (UTW) Section */}
-          <View style={styles.categorySection}>
-            <Text style={styles.categoryTitle}>2. General Knowledge (UTW)</Text>
-            {skills.slice(2, 3).map((skill) => renderSkillCard(skill))}
+        {/* ── Observation Notes ── */}
+        <View style={styles.notesCard}>
+          <View style={styles.notesHeader}>
+            <Ionicons name="document-text-outline" size={16} color={C.navy} />
+            <Text style={styles.notesLabel}>OBSERVATION NOTES</Text>
           </View>
-
-          {/* Numerical Literacy Section */}
-          <View style={styles.categorySection}>
-            <Text style={styles.categoryTitle}>3. Numerical Literacy</Text>
-            {skills.slice(3, 4).map((skill) => renderSkillCard(skill))}
-          </View>
-
-          {/* Rhymes and Songs Section */}
-          <View style={styles.categorySection}>
-            <Text style={styles.categoryTitle}>4. Rhymes and Songs</Text>
-            {skills.slice(4, 5).map((skill) => renderSkillCard(skill))}
-          </View>
-
-          {/* Participation Section */}
-          <View style={styles.categorySection}>
-            <Text style={styles.categoryTitle}>5. Participation</Text>
-            {skills.slice(5, 9).map((skill) => renderSkillCard(skill))}
-          </View>
-
-          {/* Social Skills Section */}
-          <View style={styles.categorySection}>
-            <Text style={styles.categoryTitle}>6. Social Skills</Text>
-            {skills.slice(9, 13).map((skill) => renderSkillCard(skill))}
-          </View>
-
-          {/* Cognitive Section */}
-          <View style={styles.categorySection}>
-            <Text style={styles.categoryTitle}>7. Cognitive</Text>
-            {skills.slice(13).map((skill) => renderSkillCard(skill))}
-          </View>
-        </View>
-
-        {/* Observation Notes */}
-        <View style={styles.notesSection}>
           <TextInput
             style={styles.notesInput}
-            placeholder="Observation notes..."
-            placeholderTextColor={COLORS.gray}
+            placeholder="Write notes about this student's overall progress…"
+            placeholderTextColor={C.textLight}
             value={observationNotes}
             onChangeText={setObservationNotes}
             multiline
-            numberOfLines={3}
+            numberOfLines={4}
             textAlignVertical="top"
           />
         </View>
 
-        {/* Save Button */}
+        {/* ── Save Button ── */}
         <TouchableOpacity
-          style={[styles.saveButton, saving && { opacity: 0.7 }]}
+          style={[styles.saveButton, (saving || !selectedStudent) && { opacity: 0.65 }]}
           activeOpacity={0.85}
           disabled={saving || !selectedStudent}
           onPress={async () => {
@@ -348,7 +397,7 @@ export default function TeacherProgressScreen() {
                 updated_at: new Date().toISOString(),
               }, { onConflict: 'student_id,term' });
               if (error) throw error;
-              Alert.alert('✅ Saved!', `Progress for ${selectedStudent.name} saved.`);
+              Alert.alert('✅ Saved', `Progress for ${selectedStudent.name} saved successfully.`);
             } catch (err: any) {
               Alert.alert('Error', err.message || 'Failed to save.');
             } finally {
@@ -356,324 +405,165 @@ export default function TeacherProgressScreen() {
             }
           }}
         >
-          {saving
-            ? <ActivityIndicator color={COLORS.white} size="small" />
-            : <Ionicons name="save" size={20} color={COLORS.white} />
-          }
-          <Text style={styles.saveButtonText}>
-            {saving ? 'Saving...' : 'Save Assessment'}
-          </Text>
+          <LinearGradient colors={[C.navy, C.navyLight]} style={styles.saveButtonGrad}>
+            {saving
+              ? <ActivityIndicator color="#FFFFFF" size="small" />
+              : <Ionicons name="save-outline" size={20} color="#FFFFFF" />
+            }
+            <Text style={styles.saveButtonText}>
+              {saving ? 'Saving…' : 'Save Assessment'}
+            </Text>
+          </LinearGradient>
         </TouchableOpacity>
 
-        <View style={{ height: 100 }} />
+        <View style={{ height: 40 }} />
       </ScrollView>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: COLORS.background,
-  },
+  container: { flex: 1, backgroundColor: C.bg },
+  loadingScreen: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 12, backgroundColor: C.bg },
+  loadingText: { color: C.textSecond, fontSize: 14, fontWeight: '600' },
 
   // Header
   header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingTop: 50,
-    paddingBottom: 16,
-    backgroundColor: COLORS.background,
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    paddingTop: 52, paddingBottom: 22, paddingHorizontal: 20,
   },
   backButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
-    backgroundColor: COLORS.white,
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: COLORS.primary,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 8,
-    elevation: 2,
+    width: 38, height: 38, borderRadius: 19,
+    backgroundColor: 'rgba(255,255,255,0.15)', justifyContent: 'center', alignItems: 'center',
   },
-  headerTitle: {
-    fontSize: 20,
-    fontWeight: '800',
-    color: COLORS.textPrimary,
-  },
-  headerSpacer: {
-    width: 40,
-  },
+  headerTitle: { color: '#FFFFFF', fontSize: 20, fontWeight: '900', letterSpacing: 0.2 },
+  headerSub: { color: 'rgba(255,255,255,0.75)', fontSize: 12, fontWeight: '500', marginTop: 2 },
 
-  // Scroll View
-  scrollView: {
-    flex: 1,
-  },
-  scrollContent: {
-    paddingHorizontal: 20,
-    paddingTop: 8,
-    gap: 20,
-  },
+  scrollView: { flex: 1 },
+  scrollContent: { paddingHorizontal: 18, paddingTop: 20, gap: 16 },
 
-  // Term Selector
-  termSelector: {
-    flexDirection: 'row',
-    gap: 12,
-  },
+  // Term selector
+  termSelector: { flexDirection: 'row', gap: 10 },
   termButton: {
-    flex: 1,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderRadius: 50,
-    backgroundColor: COLORS.white,
-    alignItems: 'center',
-    borderWidth: 2,
-    borderColor: COLORS.lightGray,
+    flex: 1, paddingVertical: 11, borderRadius: 20,
+    backgroundColor: C.white, alignItems: 'center',
+    borderWidth: 1.5, borderColor: C.border,
   },
-  termButtonActive: {
-    backgroundColor: COLORS.primary,
-    borderColor: COLORS.primary,
-  },
-  termText: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: COLORS.textSecondary,
-  },
-  termTextActive: {
-    color: COLORS.white,
-    fontWeight: '700',
-  },
+  termButtonActive: { backgroundColor: C.navy, borderColor: C.navy },
+  termText: { fontSize: 14, fontWeight: '700', color: C.textSecond },
+  termTextActive: { color: '#FFFFFF' },
 
-  // Student Selector
-  section: {
-    gap: 12,
-  },
-  sectionLabel: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: COLORS.primary,
-    letterSpacing: 1,
-  },
+  // Section
+  section: { gap: 10 },
+  sectionLabel: { fontSize: 11, fontWeight: '800', color: C.navy, letterSpacing: 1, textTransform: 'uppercase' },
+
+  // Student selector
   studentSelector: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: COLORS.white,
-    borderRadius: 16,
-    padding: 16,
-    shadowColor: COLORS.primary,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 8,
-    elevation: 2,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    backgroundColor: C.white, borderRadius: 16, padding: 14,
+    shadowColor: C.navy, shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.08, shadowRadius: 10, elevation: 3,
   },
-  studentInfo: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    flex: 1,
-  },
+  studentSelectorLeft: { flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 },
   studentAvatar: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: COLORS.primarySoft,
-    justifyContent: 'center',
-    alignItems: 'center',
+    width: 44, height: 44, borderRadius: 22, justifyContent: 'center', alignItems: 'center',
   },
-  studentAvatarEmoji: {
-    fontSize: 28,
+  studentAvatarText: { fontSize: 18, fontWeight: '900', color: '#FFFFFF' },
+  studentAvatarSmall: {
+    width: 32, height: 32, borderRadius: 10, backgroundColor: C.navySoft,
+    justifyContent: 'center', alignItems: 'center',
   },
-  studentDetails: {
-    flex: 1,
-    gap: 2,
-  },
-  studentName: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: COLORS.textPrimary,
-  },
-  studentClass: {
-    fontSize: 13,
-    fontWeight: '500',
-    color: COLORS.textSecondary,
-  },
+  studentAvatarSmallText: { fontSize: 14, fontWeight: '700', color: C.navy },
+  studentName: { fontSize: 15, fontWeight: '700', color: C.textPrimary },
+  studentClass: { fontSize: 12, color: C.textSecond, fontWeight: '500', marginTop: 1 },
 
   // Dropdown
   dropdown: {
-    backgroundColor: COLORS.white,
-    borderRadius: 16,
-    overflow: 'hidden',
-    shadowColor: COLORS.primary,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.12,
-    shadowRadius: 12,
-    elevation: 4,
+    backgroundColor: C.white, borderRadius: 16, overflow: 'hidden',
+    shadowColor: C.navy, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.12, shadowRadius: 14, elevation: 5,
   },
   dropdownItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.lightGray,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    padding: 14, borderBottomWidth: 1, borderBottomColor: C.border,
   },
+  dropdownItemActive: { backgroundColor: C.navySoft },
 
-  // Skills
-  skillsContainer: {
-    gap: 20,
+  // Category
+  categorySection: { gap: 10 },
+  categoryHeader: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    borderLeftWidth: 3, paddingLeft: 10,
   },
-  categorySection: {
-    gap: 10,
-  },
-  categoryTitle: {
-    fontSize: 15,
-    fontWeight: '800',
-    color: COLORS.primary,
-    letterSpacing: 0.3,
-    marginBottom: 2,
-  },
+  categoryEmoji: { fontSize: 17 },
+  categoryTitle: { fontSize: 14, fontWeight: '800', letterSpacing: 0.3 },
+
+  // Skill card
   skillCard: {
-    backgroundColor: COLORS.white,
-    borderRadius: 16,
-    padding: 16,
-    gap: 12,
-    shadowColor: COLORS.primary,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
-    elevation: 2,
+    backgroundColor: C.white, borderRadius: 16, padding: 16, gap: 14,
+    shadowColor: C.navy, shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 8, elevation: 2,
   },
-  skillHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
-  skillEmoji: {
-    fontSize: 20,
-  },
-  skillName: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: COLORS.textPrimary,
-    flex: 1,
-  },
+  skillHeader: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  skillEmojiWrap: { width: 36, height: 36, borderRadius: 10, justifyContent: 'center', alignItems: 'center' },
+  skillEmoji: { fontSize: 18 },
+  skillName: { flex: 1, fontSize: 14, fontWeight: '700', color: C.textPrimary },
   requiredBadge: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    backgroundColor: COLORS.primarySoft,
-    justifyContent: 'center',
-    alignItems: 'center',
+    width: 22, height: 22, borderRadius: 11,
+    backgroundColor: '#FDF6E3', justifyContent: 'center', alignItems: 'center',
   },
-  requiredText: {
-    fontSize: 14,
-    fontWeight: '800',
-    color: COLORS.primary,
-  },
+  requiredText: { fontSize: 12, fontWeight: '800', color: '#DAA520' },
+  currentLevelPill: { borderRadius: 10, paddingHorizontal: 10, paddingVertical: 4 },
+  currentLevelText: { fontSize: 11, fontWeight: '800' },
 
-  // Progress Tracker
+  // Progress tracker
   progressTracker: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    justifyContent: 'space-between',
-    paddingHorizontal: 4,
+    flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', paddingHorizontal: 4,
   },
-  progressStep: {
-    alignItems: 'center',
-    gap: 6,
-    flex: 1,
-    position: 'relative',
-  },
+  progressStep: { alignItems: 'center', gap: 6, flex: 1, position: 'relative' },
   progressDot: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: COLORS.lightGray,
-    justifyContent: 'center',
-    alignItems: 'center',
-    zIndex: 2,
-  },
-  progressDotActive: {
-    backgroundColor: COLORS.primary,
+    width: 32, height: 32, borderRadius: 16, backgroundColor: C.border,
+    justifyContent: 'center', alignItems: 'center', zIndex: 2,
   },
   progressDotCurrent: {
-    backgroundColor: COLORS.primary,
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 38, height: 38, borderRadius: 19,
+    shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.35, shadowRadius: 8, elevation: 5,
   },
-  progressLabel: {
-    fontSize: 10,
-    fontWeight: '600',
-    color: COLORS.textSecondary,
-    textAlign: 'center',
-  },
-  progressLabelActive: {
-    color: COLORS.primary,
-    fontWeight: '700',
-  },
+  progressLabel: { fontSize: 9, fontWeight: '600', color: C.textLight, textAlign: 'center' },
   progressLine: {
-    position: 'absolute',
-    top: 16,
-    left: '50%',
-    right: '-50%',
-    height: 2,
-    backgroundColor: COLORS.lightGray,
-    zIndex: 1,
-  },
-  progressLineActive: {
-    backgroundColor: COLORS.primary,
+    position: 'absolute', top: 16, left: '50%', right: '-50%',
+    height: 2, backgroundColor: C.border, zIndex: 1,
   },
 
-  // Observation Notes
-  notesSection: {
-    backgroundColor: COLORS.white,
-    borderRadius: 16,
-    padding: 16,
-    shadowColor: COLORS.primary,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 8,
-    elevation: 2,
+  // Notes
+  notesCard: {
+    backgroundColor: C.white, borderRadius: 16, padding: 16, gap: 10,
+    shadowColor: C.navy, shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 8, elevation: 2,
   },
+  notesHeader: { flexDirection: 'row', alignItems: 'center', gap: 7 },
+  notesLabel: { fontSize: 11, fontWeight: '800', color: C.navy, letterSpacing: 0.8 },
   notesInput: {
-    fontSize: 14,
-    color: COLORS.textPrimary,
-    minHeight: 80,
+    fontSize: 14, color: C.textPrimary, minHeight: 90, lineHeight: 22,
+    borderTopWidth: 1, borderTopColor: C.border, paddingTop: 10,
   },
 
-  // Save Button
-  saveButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 10,
-    backgroundColor: COLORS.primary,
-    borderRadius: 50,
-    paddingVertical: 18,
-    shadowColor: COLORS.primary,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 12,
-    elevation: 6,
+  // Save button
+  saveButton: { borderRadius: 20, overflow: 'hidden' },
+  saveButtonGrad: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: 10, paddingVertical: 18,
   },
-  saveButtonText: {
-    fontSize: 17,
-    fontWeight: '700',
-    color: COLORS.white,
-    letterSpacing: 0.3,
+  saveButtonText: { fontSize: 16, fontWeight: '800', color: '#FFFFFF', letterSpacing: 0.3 },
+
+  emptyStudents: { paddingVertical: 16, alignItems: 'center' },
+  emptyStudentsText: { fontSize: 14, color: C.textSecond },
+
+  progressLoading: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 24 },
+  progressLoadingText: { fontSize: 13, color: C.textSecond, fontWeight: '600' },
+
+  skillNoteWrap: {
+    flexDirection: 'row', alignItems: 'flex-start', gap: 7,
+    backgroundColor: C.bg, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 8,
+    borderWidth: 1, borderColor: C.border,
   },
-  emptyStudents: {
-    paddingVertical: 16,
-    alignItems: 'center',
-  },
-  emptyStudentsText: {
-    fontSize: 14,
-    color: COLORS.textSecondary,
+  skillNoteInput: {
+    flex: 1, fontSize: 12, color: C.textPrimary, minHeight: 36, lineHeight: 18,
   },
 });

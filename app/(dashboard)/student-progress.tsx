@@ -1,10 +1,11 @@
-﻿import { Ionicons } from '@expo/vector-icons';
+import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Modal,
   ScrollView,
   StyleSheet,
   Text,
@@ -37,12 +38,19 @@ interface StudentRow {
 interface StudentWithSkills extends StudentRow {
   skills: Skill[];
   overallPct: number;
+  observationNotes: string;
 }
 
 type Term = 1 | 2 | 3;
 type ClassCode = 'PG' | 'PKG' | 'JKG' | 'SKG';
 type SortMode = 'name' | 'progress-desc' | 'progress-asc';
 type LevelFilter = 'all' | SkillLevel;
+
+interface EditModal {
+  student: StudentWithSkills;
+  skills: Skill[];
+  notes: string;
+}
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const CLASSES: { code: ClassCode; label: string; fullName: string; gradient: [string, string]; light: string; text: string; icon: string }[] = [
@@ -71,6 +79,7 @@ const SORT_OPTIONS: { mode: SortMode; label: string; icon: any }[] = [
 ];
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
+function termKey(t: Term): string { return `term${t}`; }
 function skillCategory(skillId: string) {
   const prefix = skillId.split('-')[0];
   return SKILL_CATEGORY_GROUPS[prefix] ?? { label: 'Other', emoji: '📌', color: '#8B95A1' };
@@ -88,6 +97,15 @@ function nearestLevel(pct: number) {
 function getInitials(name: string) {
   return name.split(' ').map((n) => n[0]).join('').toUpperCase().slice(0, 2);
 }
+function parseDbSkills(raw: any, defaults: Skill[]): Skill[] {
+  try {
+    const arr: any[] = typeof raw === 'string' ? JSON.parse(raw) : Array.isArray(raw) ? raw : [];
+    if (!arr.length) return defaults.map(s => ({ ...s }));
+    return mergeSkillsWithSaved(defaults, arr as Skill[]);
+  } catch {
+    return defaults.map(s => ({ ...s }));
+  }
+}
 
 // ─── Main Screen ──────────────────────────────────────────────────────────────
 export default function StudentProgressScreen() {
@@ -99,9 +117,14 @@ export default function StudentProgressScreen() {
   const [activeClass, setActiveClass] = useState<ClassCode>('PG');
   const [allStudents, setAllStudents] = useState<StudentRow[]>([]);
   const [studentSkillMap, setStudentSkillMap] = useState<Map<string, Skill[]>>(new Map());
+  const [studentNotesMap, setStudentNotesMap] = useState<Map<string, string>>(new Map());
   const [loadingStudents, setLoadingStudents] = useState(true);
   const [loadingSkills, setLoadingSkills] = useState(false);
   const [expandedStudent, setExpandedStudent] = useState<string | null>(null);
+
+  // Edit modal
+  const [editModal, setEditModal] = useState<EditModal | null>(null);
+  const [editSaving, setEditSaving] = useState(false);
 
   // Controls
   const [search, setSearch] = useState('');
@@ -125,20 +148,43 @@ export default function StudentProgressScreen() {
     })();
   }, [schoolId]);
 
-  // ── Load skills for current class+term ──
+  // ── Load skills for current class+term (Supabase first, AsyncStorage fallback) ──
   const loadSkillsForClass = useCallback(async (classCode: ClassCode, t: Term, students: StudentRow[]) => {
     const inClass = students.filter((s) => s.class === classCode);
     if (!inClass.length) return;
     setLoadingSkills(true);
-    const map = new Map<string, Skill[]>(studentSkillMap);
+
+    const skillMap = new Map<string, Skill[]>(studentSkillMap);
+    const notesMap = new Map<string, string>(studentNotesMap);
+
+    // Batch fetch from Supabase
+    const ids = inClass.map((s) => s.id);
+    const { data: dbRecords } = await supabase
+      .from('student_progress')
+      .select('student_id, skills, observation_notes')
+      .in('student_id', ids)
+      .eq('term', termKey(t));
+
+    const dbMap = new Map((dbRecords ?? []).map((r) => [r.student_id, r]));
+
     await Promise.all(
       inClass.map(async (s) => {
         const defaults = getSkillsForClass(s.class).map((sk) => ({ ...sk }));
-        const saved = await loadStudentProgress(s.id, t);
-        map.set(`${s.id}:${t}`, mergeSkillsWithSaved(defaults, saved));
+        const dbRecord = dbMap.get(s.id);
+        if (dbRecord) {
+          skillMap.set(`${s.id}:${t}`, parseDbSkills(dbRecord.skills, defaults));
+          notesMap.set(`${s.id}:${t}`, dbRecord.observation_notes ?? '');
+        } else {
+          // Fallback to AsyncStorage
+          const saved = await loadStudentProgress(s.id, t);
+          skillMap.set(`${s.id}:${t}`, mergeSkillsWithSaved(defaults, saved));
+          notesMap.set(`${s.id}:${t}`, '');
+        }
       })
     );
-    setStudentSkillMap(new Map(map));
+
+    setStudentSkillMap(new Map(skillMap));
+    setStudentNotesMap(new Map(notesMap));
     setLoadingSkills(false);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -154,9 +200,10 @@ export default function StudentProgressScreen() {
       .filter((s) => s.class === activeClass)
       .map((s) => {
         const skills = studentSkillMap.get(`${s.id}:${term}`) ?? getSkillsForClass(s.class).map((sk) => ({ ...sk }));
-        return { ...s, skills, overallPct: avgPct(skills) };
+        const observationNotes = studentNotesMap.get(`${s.id}:${term}`) ?? '';
+        return { ...s, skills, overallPct: avgPct(skills), observationNotes };
       });
-  }, [allStudents, activeClass, term, studentSkillMap]);
+  }, [allStudents, activeClass, term, studentSkillMap, studentNotesMap]);
 
   // ── Search + filter + sort ──
   const displayStudents = useMemo(() => {
@@ -205,14 +252,60 @@ export default function StudentProgressScreen() {
     const sortedSkills = [...classSkillAverages].sort((a, b) => b.avgPct - a.avgPct);
     const strongest = sortedSkills[0];
     const weakest = sortedSkills[sortedSkills.length - 1];
-    const attentionCount = classStudents.filter((s) => s.overallPct < 50).length;
-    return { top, needs, strongest, weakest, attentionCount };
+    return { top, needs, strongest, weakest };
   }, [classStudents, classSkillAverages]);
 
   const activeCfg = CLASSES.find((c) => c.code === activeClass)!;
   const classAvg = classStudents.length
     ? Math.round(classStudents.reduce((s, st) => s + st.overallPct, 0) / classStudents.length)
     : 0;
+
+  // ── Open edit modal ──
+  const openEditModal = useCallback((st: StudentWithSkills) => {
+    setEditModal({
+      student: st,
+      skills: st.skills.map((sk) => ({ ...sk })),
+      notes: st.observationNotes,
+    });
+  }, []);
+
+  // ── Save edited progress ──
+  const saveProgress = useCallback(async () => {
+    if (!editModal) return;
+    setEditSaving(true);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('Not logged in');
+      const { error } = await supabase.from('student_progress').upsert({
+        student_id: editModal.student.id,
+        term: termKey(term),
+        skills: JSON.stringify(editModal.skills),
+        observation_notes: editModal.notes,
+        updated_by: user.id,
+        updated_at: new Date().toISOString(),
+      }, { onConflict: 'student_id,term' });
+      if (error) throw error;
+
+      // Update local maps
+      setStudentSkillMap((prev) => {
+        const m = new Map(prev);
+        m.set(`${editModal.student.id}:${term}`, editModal.skills);
+        return m;
+      });
+      setStudentNotesMap((prev) => {
+        const m = new Map(prev);
+        m.set(`${editModal.student.id}:${term}`, editModal.notes);
+        return m;
+      });
+
+      setEditModal(null);
+      Alert.alert('✅ Saved', `Progress for ${editModal.student.full_name} updated.`);
+    } catch (e: any) {
+      Alert.alert('Error', e?.message ?? 'Failed to save progress.');
+    } finally {
+      setEditSaving(false);
+    }
+  }, [editModal, term]);
 
   // ── Exports ──
   const handleExportClass = useCallback(async () => {
@@ -523,29 +616,41 @@ export default function StudentProgressScreen() {
               const ovl = nearestLevel(st.overallPct);
               return (
                 <View key={st.id}>
-                  <TouchableOpacity
-                    style={styles.studentCard}
-                    onPress={() => setExpandedStudent(isExpanded ? null : st.id)}
-                    activeOpacity={0.8}
-                  >
-                    <LinearGradient colors={activeCfg.gradient} style={styles.studentAvatar}>
-                      <Text style={styles.studentAvatarText}>{getInitials(st.full_name)}</Text>
-                    </LinearGradient>
-                    <View style={styles.studentInfo}>
-                      <Text style={styles.studentName}>{st.full_name}</Text>
-                      {st.roll_number && <Text style={styles.studentRoll}>Roll #{st.roll_number}</Text>}
-                      <View style={styles.studentProgressRow}>
-                        <View style={{ flex: 1 }}>
-                          <AnimatedProgressBar percent={st.overallPct} color={ovl.color} height={5} />
+                  <View style={styles.studentCard}>
+                    {/* Left: tap to expand/collapse skills */}
+                    <TouchableOpacity
+                      style={styles.studentCardMain}
+                      onPress={() => setExpandedStudent(isExpanded ? null : st.id)}
+                      activeOpacity={0.8}
+                    >
+                      <LinearGradient colors={activeCfg.gradient} style={styles.studentAvatar}>
+                        <Text style={styles.studentAvatarText}>{getInitials(st.full_name)}</Text>
+                      </LinearGradient>
+                      <View style={styles.studentInfo}>
+                        <Text style={styles.studentName}>{st.full_name}</Text>
+                        {st.roll_number && <Text style={styles.studentRoll}>Roll #{st.roll_number}</Text>}
+                        <View style={styles.studentProgressRow}>
+                          <View style={{ flex: 1 }}>
+                            <AnimatedProgressBar percent={st.overallPct} color={ovl.color} height={5} />
+                          </View>
+                          <Text style={[styles.studentProgressPct, { color: ovl.color }]}>{st.overallPct}%</Text>
                         </View>
-                        <Text style={[styles.studentProgressPct, { color: ovl.color }]}>{st.overallPct}%</Text>
                       </View>
-                    </View>
-                    <View style={[styles.levelBadge, { backgroundColor: ovl.color + '18' }]}>
-                      <Text style={[styles.levelBadgeText, { color: ovl.color }]}>{ovl.label}</Text>
-                    </View>
-                    <Ionicons name={isExpanded ? 'chevron-up' : 'chevron-down'} size={16} color="#8B95A1" style={{ marginLeft: 4 }} />
-                  </TouchableOpacity>
+                      <View style={[styles.levelBadge, { backgroundColor: ovl.color + '18' }]}>
+                        <Text style={[styles.levelBadgeText, { color: ovl.color }]}>{ovl.label}</Text>
+                      </View>
+                      <Ionicons name={isExpanded ? 'chevron-up' : 'chevron-down'} size={14} color="#8B95A1" style={{ marginLeft: 2 }} />
+                    </TouchableOpacity>
+
+                    {/* Right: direct edit button — always visible */}
+                    <TouchableOpacity
+                      style={styles.studentEditBtn}
+                      onPress={() => openEditModal(st)}
+                      activeOpacity={0.8}
+                    >
+                      <Ionicons name="create-outline" size={17} color="#FFFFFF" />
+                    </TouchableOpacity>
+                  </View>
 
                   {isExpanded && (
                     <View style={styles.expandedSkills}>
@@ -557,6 +662,9 @@ export default function StudentProgressScreen() {
                             <View style={styles.expandedSkillInfo}>
                               <Text style={styles.expandedSkillName}>{sk.name}</Text>
                               <AnimatedProgressBar percent={ld.progress} color={ld.color} height={5} trackColor="#E2E8F0" />
+                              {sk.notes ? (
+                                <Text style={styles.expandedSkillNote}>📝 {sk.notes}</Text>
+                              ) : null}
                             </View>
                             <View style={[styles.expandedLevelPill, { backgroundColor: ld.color + '20' }]}>
                               <Text style={[styles.expandedLevelText, { color: ld.color }]}>{ld.label}</Text>
@@ -564,6 +672,12 @@ export default function StudentProgressScreen() {
                           </View>
                         );
                       })}
+                      {st.observationNotes ? (
+                        <View style={styles.expandedNotes}>
+                          <Text style={styles.expandedNotesLabel}>Notes</Text>
+                          <Text style={styles.expandedNotesText}>{st.observationNotes}</Text>
+                        </View>
+                      ) : null}
                       <View style={styles.expandedActions}>
                         <TouchableOpacity
                           style={styles.viewProfileBtn}
@@ -578,7 +692,7 @@ export default function StudentProgressScreen() {
                           onPress={() => handleExportStudent(st)}
                           activeOpacity={0.8}
                         >
-                          <Ionicons name="download-outline" size={15} color="#FFFFFF" />
+                          <Ionicons name="download-outline" size={15} color="#1E3A5F" />
                           <Text style={styles.exportStudentText}>Export PDF</Text>
                         </TouchableOpacity>
                       </View>
@@ -592,6 +706,163 @@ export default function StudentProgressScreen() {
 
         <View style={{ height: 40 }} />
       </ScrollView>
+
+      {/* ── Edit Progress Modal ── */}
+      <Modal
+        visible={!!editModal}
+        animationType="slide"
+        transparent
+        onRequestClose={() => !editSaving && setEditModal(null)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalSheet}>
+            {/* Modal Header */}
+            <View style={styles.modalHeader}>
+              <View style={styles.modalHandle} />
+              <View style={styles.modalTitleRow}>
+                <View>
+                  <Text style={styles.modalTitle}>Edit Progress</Text>
+                  <Text style={styles.modalSub}>
+                    {editModal?.student.full_name} · Term {term}
+                  </Text>
+                </View>
+                <TouchableOpacity
+                  style={styles.modalCloseBtn}
+                  onPress={() => !editSaving && setEditModal(null)}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons name="close" size={20} color="#5A6C7D" />
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            <ScrollView style={styles.modalScroll} showsVerticalScrollIndicator={false}>
+              {/* Skills */}
+              {editModal?.skills.map((skill) => {
+                const currentIdx = SKILL_LEVELS.findIndex((l) => l.value === skill.level);
+                return (
+                  <View key={skill.id} style={styles.modalSkillCard}>
+                    <View style={styles.modalSkillHeader}>
+                      <Text style={styles.modalSkillEmoji}>{skill.emoji}</Text>
+                      <Text style={styles.modalSkillName}>{skill.name}</Text>
+                      {skill.required && (
+                        <View style={styles.modalRequiredBadge}>
+                          <Text style={styles.modalRequiredText}>★</Text>
+                        </View>
+                      )}
+                    </View>
+
+                    {/* Progress tracker dots */}
+                    <View style={styles.modalProgressTracker}>
+                      {SKILL_LEVELS.map((levelOpt, idx) => {
+                        const isActive = idx <= currentIdx;
+                        const isCurrent = idx === currentIdx;
+                        return (
+                          <View key={levelOpt.value} style={styles.modalProgressStep}>
+                            <TouchableOpacity
+                              style={[
+                                styles.modalProgressDot,
+                                isActive && { backgroundColor: levelOpt.color },
+                                isCurrent && styles.modalProgressDotCurrent,
+                              ]}
+                              onPress={() => {
+                                setEditModal((prev) => {
+                                  if (!prev) return prev;
+                                  return {
+                                    ...prev,
+                                    skills: prev.skills.map((sk) =>
+                                      sk.id === skill.id ? { ...sk, level: levelOpt.value } : sk
+                                    ),
+                                  };
+                                });
+                              }}
+                              activeOpacity={0.8}
+                            >
+                              {isActive && (
+                                <Ionicons
+                                  name={isCurrent ? 'radio-button-on' : 'checkmark'}
+                                  size={isCurrent ? 18 : 13}
+                                  color="#FFFFFF"
+                                />
+                              )}
+                            </TouchableOpacity>
+                            <Text style={[
+                              styles.modalProgressLabel,
+                              isCurrent && { color: levelOpt.color, fontWeight: '700' },
+                            ]}>
+                              {levelOpt.label}
+                            </Text>
+                            {idx < SKILL_LEVELS.length - 1 && (
+                              <View style={[
+                                styles.modalProgressLine,
+                                isActive && idx < currentIdx && { backgroundColor: SKILL_LEVELS[idx].color },
+                              ]} />
+                            )}
+                          </View>
+                        );
+                      })}
+                    </View>
+
+                    {/* Per-skill note */}
+                    <View style={styles.modalSkillNoteWrap}>
+                      <Ionicons name="pencil-outline" size={13} color="#8B95A1" style={{ marginTop: 2 }} />
+                      <TextInput
+                        style={styles.modalSkillNoteInput}
+                        placeholder="Add a note for this skill…"
+                        placeholderTextColor="#A8B2BD"
+                        value={skill.notes}
+                        onChangeText={(text) =>
+                          setEditModal(prev => prev ? {
+                            ...prev,
+                            skills: prev.skills.map(sk => sk.id === skill.id ? { ...sk, notes: text } : sk),
+                          } : prev)
+                        }
+                        multiline
+                        textAlignVertical="top"
+                      />
+                    </View>
+                  </View>
+                );
+              })}
+
+              {/* Observation Notes */}
+              <View style={styles.modalNotesCard}>
+                <Text style={styles.modalNotesLabel}>OBSERVATION NOTES</Text>
+                <TextInput
+                  style={styles.modalNotesInput}
+                  placeholder="Add notes about this student's progress..."
+                  placeholderTextColor="#A8B2BD"
+                  value={editModal?.notes ?? ''}
+                  onChangeText={(text) => setEditModal((prev) => prev ? { ...prev, notes: text } : prev)}
+                  multiline
+                  numberOfLines={4}
+                  textAlignVertical="top"
+                />
+              </View>
+
+              <View style={{ height: 20 }} />
+            </ScrollView>
+
+            {/* Save Button */}
+            <View style={styles.modalFooter}>
+              <TouchableOpacity
+                style={[styles.modalSaveBtn, editSaving && { opacity: 0.7 }]}
+                onPress={saveProgress}
+                disabled={editSaving}
+                activeOpacity={0.85}
+              >
+                {editSaving
+                  ? <ActivityIndicator color="#FFFFFF" size="small" />
+                  : <Ionicons name="save-outline" size={20} color="#FFFFFF" />
+                }
+                <Text style={styles.modalSaveBtnText}>
+                  {editSaving ? 'Saving…' : 'Save Progress'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -730,7 +1001,12 @@ const styles = StyleSheet.create({
   filterChipText: { fontSize: 12, fontWeight: '700', color: '#5A6C7D' },
 
   // Student card
-  studentCard: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 13, borderBottomWidth: 1, borderBottomColor: '#F0F4F8' },
+  studentCard: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#F0F4F8' },
+  studentCardMain: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 12 },
+  studentEditBtn: {
+    width: 36, height: 36, borderRadius: 10, backgroundColor: '#1E3A5F',
+    justifyContent: 'center', alignItems: 'center', flexShrink: 0,
+  },
   studentAvatar: { width: 44, height: 44, borderRadius: 22, justifyContent: 'center', alignItems: 'center', flexShrink: 0 },
   studentAvatarText: { color: '#FFFFFF', fontSize: 15, fontWeight: '900' },
   studentInfo: { flex: 1 },
@@ -747,9 +1023,13 @@ const styles = StyleSheet.create({
   expandedSkillEmoji: { fontSize: 17 },
   expandedSkillInfo: { flex: 1 },
   expandedSkillName: { fontSize: 12, fontWeight: '700', color: '#1E3A5F', marginBottom: 4 },
+  expandedSkillNote: { fontSize: 11, color: '#5A6C7D', fontStyle: 'italic', marginTop: 3, lineHeight: 15 },
   expandedLevelPill: { borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3, minWidth: 72, alignItems: 'center' },
   expandedLevelText: { fontSize: 10, fontWeight: '800' },
-  expandedActions: { flexDirection: 'row', gap: 10, marginTop: 4 },
+  expandedNotes: { backgroundColor: '#EEF2FF', borderRadius: 10, padding: 10, gap: 3 },
+  expandedNotesLabel: { fontSize: 9, fontWeight: '700', color: '#1E3A5F', textTransform: 'uppercase', letterSpacing: 0.5 },
+  expandedNotesText: { fontSize: 12, color: '#1E3A5F', lineHeight: 17 },
+  expandedActions: { flexDirection: 'row', gap: 8, marginTop: 4 },
   viewProfileBtn: {
     flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
     backgroundColor: '#E8EDF3', borderRadius: 10, paddingVertical: 10,
@@ -757,12 +1037,80 @@ const styles = StyleSheet.create({
   viewProfileText: { fontSize: 12, fontWeight: '700', color: '#1E3A5F' },
   exportStudentBtn: {
     flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
-    backgroundColor: '#1E3A5F', borderRadius: 10, paddingVertical: 10,
+    backgroundColor: '#E8EDF3', borderRadius: 10, paddingVertical: 10,
   },
-  exportStudentText: { fontSize: 12, fontWeight: '700', color: '#FFFFFF' },
+  exportStudentText: { fontSize: 12, fontWeight: '700', color: '#1E3A5F' },
 
   emptyStudents: { alignItems: 'center', paddingVertical: 36, gap: 6 },
   emptyStudentsEmoji: { fontSize: 40 },
   emptyStudentsTitle: { fontSize: 16, fontWeight: '800', color: '#1E3A5F' },
   emptyStudentsText: { fontSize: 13, color: '#8B95A1', fontWeight: '500', textAlign: 'center' },
+
+  // Edit Modal
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' },
+  modalSheet: {
+    backgroundColor: '#FFFFFF', borderTopLeftRadius: 28, borderTopRightRadius: 28,
+    maxHeight: '92%',
+    shadowColor: '#000', shadowOffset: { width: 0, height: -4 }, shadowOpacity: 0.12, shadowRadius: 20, elevation: 20,
+  },
+  modalHeader: { paddingHorizontal: 20, paddingTop: 12, paddingBottom: 16, borderBottomWidth: 1, borderBottomColor: '#F0F4F8' },
+  modalHandle: { width: 40, height: 4, borderRadius: 2, backgroundColor: '#D1D9E0', alignSelf: 'center', marginBottom: 16 },
+  modalTitleRow: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' },
+  modalTitle: { fontSize: 18, fontWeight: '900', color: '#1E3A5F' },
+  modalSub: { fontSize: 12, color: '#8B95A1', fontWeight: '600', marginTop: 3 },
+  modalCloseBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: '#F0F4F8', justifyContent: 'center', alignItems: 'center' },
+  modalScroll: { maxHeight: 520, paddingHorizontal: 20 },
+
+  modalSkillCard: {
+    backgroundColor: '#F8FAFC', borderRadius: 16, padding: 16, gap: 14,
+    marginTop: 14,
+    borderWidth: 1, borderColor: '#E2E8F0',
+  },
+  modalSkillHeader: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  modalSkillEmoji: { fontSize: 20 },
+  modalSkillName: { flex: 1, fontSize: 15, fontWeight: '700', color: '#1E3A5F' },
+  modalRequiredBadge: { width: 22, height: 22, borderRadius: 11, backgroundColor: '#FDF6E3', justifyContent: 'center', alignItems: 'center' },
+  modalRequiredText: { fontSize: 12, fontWeight: '800', color: '#DAA520' },
+
+  modalProgressTracker: {
+    flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', paddingHorizontal: 4,
+  },
+  modalProgressStep: { alignItems: 'center', gap: 6, flex: 1, position: 'relative' },
+  modalProgressDot: {
+    width: 32, height: 32, borderRadius: 16, backgroundColor: '#E2E8F0',
+    justifyContent: 'center', alignItems: 'center', zIndex: 2,
+  },
+  modalProgressDotCurrent: { width: 36, height: 36, borderRadius: 18 },
+  modalProgressLabel: { fontSize: 9, fontWeight: '600', color: '#8B95A1', textAlign: 'center' },
+  modalProgressLine: {
+    position: 'absolute', top: 16, left: '50%', right: '-50%',
+    height: 2, backgroundColor: '#E2E8F0', zIndex: 1,
+  },
+
+  modalSkillNoteWrap: {
+    flexDirection: 'row', alignItems: 'flex-start', gap: 7,
+    backgroundColor: '#F0F4F8', borderRadius: 10, paddingHorizontal: 10, paddingVertical: 8,
+    borderWidth: 1, borderColor: '#E2E8F0',
+  },
+  modalSkillNoteInput: {
+    flex: 1, fontSize: 12, color: '#1E3A5F', minHeight: 36, lineHeight: 18,
+  },
+
+  modalNotesCard: {
+    backgroundColor: '#F8FAFC', borderRadius: 16, padding: 16, gap: 8,
+    marginTop: 14, borderWidth: 1, borderColor: '#E2E8F0',
+  },
+  modalNotesLabel: { fontSize: 10, fontWeight: '700', color: '#1E3A5F', letterSpacing: 0.8, textTransform: 'uppercase' },
+  modalNotesInput: {
+    fontSize: 14, color: '#1E3A5F', minHeight: 90, lineHeight: 20,
+    textAlignVertical: 'top',
+  },
+
+  modalFooter: { paddingHorizontal: 20, paddingVertical: 16, borderTopWidth: 1, borderTopColor: '#F0F4F8' },
+  modalSaveBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10,
+    backgroundColor: '#1E3A5F', borderRadius: 16, paddingVertical: 16,
+    shadowColor: '#1E3A5F', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 12, elevation: 6,
+  },
+  modalSaveBtnText: { fontSize: 16, fontWeight: '700', color: '#FFFFFF' },
 });
