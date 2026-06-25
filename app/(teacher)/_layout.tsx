@@ -34,6 +34,7 @@ export default function TeacherLayout() {
           tabBarIcon: ({ color, size }) => <Ionicons name="bar-chart" size={size} color={color} />,
         }}
       />
+      <Tabs.Screen name="apply-leave" options={{ href: null }} />
       <Tabs.Screen
         name="profile"
         options={{

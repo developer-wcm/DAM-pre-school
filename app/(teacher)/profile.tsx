@@ -4,6 +4,8 @@ import { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Animated,
+  KeyboardAvoidingView,
   Modal,
   PermissionsAndroid,
   Platform,
@@ -15,6 +17,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { WebView } from 'react-native-webview';
 import { COLORS } from '../../constants/admissionTheme';
 import { DEFAULT_SCHOOL_ID } from '../../constants/school';
 import { useAuth } from '../../context/auth';
@@ -33,6 +36,19 @@ interface TeacherProfile {
 }
 
 type CheckInStatus = 'present' | 'late' | null;
+
+const LEAVE_FORM_URL = 'https://forms.gle/b1kaZ3QXxbvu3Q3x9';
+
+type LeaveType = 'sick' | 'casual' | 'emergency' | 'annual' | 'maternity' | 'other';
+
+const LEAVE_TYPES: { type: LeaveType; label: string; icon: string; color: string }[] = [
+  { type: 'sick',       label: 'Sick Leave',   icon: 'medkit',              color: '#E05A5A' },
+  { type: 'casual',    label: 'Casual',        icon: 'compass',             color: '#7B6FE8' },
+  { type: 'emergency', label: 'Emergency',     icon: 'warning',             color: '#D4822A' },
+  { type: 'annual',    label: 'Annual',        icon: 'calendar',            color: '#2A9D6E' },
+  { type: 'maternity', label: 'Maternity',     icon: 'heart',               color: '#E05A5A' },
+  { type: 'other',     label: 'Other',         icon: 'ellipsis-horizontal', color: '#5A5A7A' },
+];
 
 function todayKey() {
   const d = new Date();
@@ -75,6 +91,81 @@ export default function TeacherProfileScreen() {
   const [showNew, setShowNew] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
 
+  // My leave requests
+  const [myLeaves, setMyLeaves] = useState<{
+    id: string; leave_type: string; start_date: string; end_date: string;
+    days: number; reason: string | null; status: string; created_at: string;
+  }[]>([]);
+
+  async function fetchMyLeaves(staffId: string) {
+    const { data } = await supabase
+      .from('leave_requests')
+      .select('id, leave_type, start_date, end_date, days, reason, status, created_at')
+      .eq('staff_id', staffId)
+      .order('created_at', { ascending: false })
+      .limit(10);
+    setMyLeaves(data ?? []);
+  }
+
+  // Apply Leave
+  const today = new Date().toISOString().split('T')[0];
+  const [leaveFormVisible, setLeaveFormVisible] = useState(false);
+  const [leaveWebVisible, setLeaveWebVisible] = useState(false);
+  const leaveSlide = useState(() => new Animated.Value(600))[0];
+  const [leaveType, setLeaveType] = useState<LeaveType>('sick');
+  const [leaveStart, setLeaveStart] = useState(today);
+  const [leaveEnd, setLeaveEnd] = useState(today);
+  const [leaveReason, setLeaveReason] = useState('');
+  const [leaveSubmitting, setLeaveSubmitting] = useState(false);
+
+  function openLeaveForm() {
+    setLeaveFormVisible(true);
+    Animated.spring(leaveSlide, { toValue: 0, useNativeDriver: true, tension: 65, friction: 11 }).start();
+  }
+
+  function closeLeaveForm() {
+    Animated.timing(leaveSlide, { toValue: 600, duration: 220, useNativeDriver: true }).start(() => {
+      setLeaveFormVisible(false);
+      setLeaveType('sick');
+      setLeaveStart(today);
+      setLeaveEnd(today);
+      setLeaveReason('');
+    });
+  }
+
+  function calcDays(start: string, end: string) {
+    return Math.max(1, Math.ceil((new Date(end).getTime() - new Date(start).getTime()) / 86400000) + 1);
+  }
+
+  async function handleLeaveSubmit() {
+    if (!leaveStart || !leaveEnd) { Alert.alert('Required', 'Please set start and end dates.'); return; }
+    if (leaveEnd < leaveStart) { Alert.alert('Invalid', 'End date cannot be before start date.'); return; }
+    if (!profile?.id) return;
+
+    setLeaveSubmitting(true);
+    const { error } = await supabase.from('leave_requests').insert({
+      staff_id: profile.id,
+      school_id: profile.school_id ?? DEFAULT_SCHOOL_ID,
+      leave_type: leaveType,
+      start_date: leaveStart,
+      end_date: leaveEnd,
+      days: calcDays(leaveStart, leaveEnd),
+      reason: leaveReason.trim() || null,
+      status: 'pending',
+    });
+    setLeaveSubmitting(false);
+
+    if (error) {
+      Alert.alert('Error', error.message);
+      return;
+    }
+
+    // Refresh leave list then open Google Form
+    if (profile?.id) fetchMyLeaves(profile.id);
+    closeLeaveForm();
+    setTimeout(() => setLeaveWebVisible(true), 300);
+  }
+
   async function loadProfile() {
     try {
       const { data: { user } } = await supabase.auth.getUser();
@@ -85,6 +176,7 @@ export default function TeacherProfileScreen() {
         .eq('id', user.id)
         .single();
       setProfile(data);
+      if (data?.id) fetchMyLeaves(data.id);
 
       const schoolId = data?.school_id ?? DEFAULT_SCHOOL_ID;
 
@@ -386,7 +478,63 @@ export default function TeacherProfileScreen() {
             {!checkInStatus && wifiMessage && (
               <Text style={styles.checkInHint}>{wifiMessage}</Text>
             )}
+
+            <View style={styles.infoDivider} />
+            <TouchableOpacity style={styles.infoRow} activeOpacity={0.7} onPress={openLeaveForm}>
+              <View style={[styles.infoIcon, { backgroundColor: '#FEF3C7' }]}>
+                <Ionicons name="calendar-outline" size={16} color="#D4822A" />
+              </View>
+              <View style={styles.infoContent}>
+                <Text style={styles.infoLabel}>Leave</Text>
+                <Text style={styles.infoValue}>Apply for Leave</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color={COLORS.textLight} />
+            </TouchableOpacity>
           </View>
+        </View>
+
+        {/* My Leave Requests */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>MY LEAVE REQUESTS</Text>
+          {myLeaves.length === 0 ? (
+            <View style={[styles.card, { padding: 20, alignItems: 'center' }]}>
+              <Text style={{ fontSize: 13, color: COLORS.textSecondary }}>No leave requests yet.</Text>
+            </View>
+          ) : (
+            <View style={styles.card}>
+              {myLeaves.map((lr, i) => {
+                const statusColors: Record<string, { bg: string; text: string }> = {
+                  pending:  { bg: '#FFF8E7', text: '#E8A020' },
+                  approved: { bg: '#E8F8F0', text: '#2A9D6E' },
+                  rejected: { bg: '#FFF0F0', text: '#E05A5A' },
+                };
+                const sc = statusColors[lr.status] ?? { bg: '#F4F5F9', text: '#5A5A7A' };
+                const label = lr.leave_type.charAt(0).toUpperCase() + lr.leave_type.slice(1);
+                const dateStr = lr.start_date === lr.end_date
+                  ? new Date(lr.start_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
+                  : `${new Date(lr.start_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })} – ${new Date(lr.end_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}`;
+                return (
+                  <View key={lr.id}>
+                    {i > 0 && <View style={styles.infoDivider} />}
+                    <View style={leaveStatus.row}>
+                      <View style={leaveStatus.info}>
+                        <Text style={leaveStatus.type}>{label} Leave · {lr.days} day{lr.days > 1 ? 's' : ''}</Text>
+                        <Text style={leaveStatus.date}>{dateStr}</Text>
+                        {lr.reason ? <Text style={leaveStatus.reason}>"{lr.reason}"</Text> : null}
+                      </View>
+                      <View style={[leaveStatus.badge, { backgroundColor: sc.bg }]}>
+                        <Text style={[leaveStatus.badgeText, { color: sc.text }]}>
+                          {lr.status === 'approved' ? '✓ Approved'
+                            : lr.status === 'rejected' ? '✗ Rejected'
+                            : '⏳ Pending'}
+                        </Text>
+                      </View>
+                    </View>
+                  </View>
+                );
+              })}
+            </View>
+          )}
         </View>
 
         {/* Reports */}
@@ -484,6 +632,118 @@ export default function TeacherProfileScreen() {
 
         <View style={{ height: 100 }} />
       </ScrollView>
+
+      {/* ── Apply Leave — Step 1: In-app form ── */}
+      <Modal visible={leaveFormVisible} transparent animationType="none" onRequestClose={closeLeaveForm}>
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={leave.overlay}>
+          <TouchableOpacity style={leave.backdrop} activeOpacity={1} onPress={closeLeaveForm} />
+          <Animated.View style={[leave.sheet, { transform: [{ translateY: leaveSlide }] }]}>
+            <View style={leave.handle} />
+            <View style={leave.header}>
+              <Text style={leave.title}>Apply for Leave</Text>
+              <TouchableOpacity onPress={closeLeaveForm} style={leave.closeBtn}>
+                <Ionicons name="close" size={20} color={COLORS.textSecondary} />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView showsVerticalScrollIndicator={false}>
+              <Text style={leave.label}>Leave Type</Text>
+              <View style={leave.typeGrid}>
+                {LEAVE_TYPES.map((lt) => {
+                  const active = leaveType === lt.type;
+                  return (
+                    <TouchableOpacity
+                      key={lt.type}
+                      style={[leave.typeChip, active && { backgroundColor: lt.color + '20', borderColor: lt.color }]}
+                      onPress={() => setLeaveType(lt.type)}
+                      activeOpacity={0.8}
+                    >
+                      <Ionicons name={lt.icon as any} size={14} color={active ? lt.color : '#9A9AB0'} />
+                      <Text style={[leave.typeChipText, active && { color: lt.color }]}>{lt.label}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+
+              <View style={leave.dateRow}>
+                <View style={{ flex: 1 }}>
+                  <Text style={leave.label}>Start Date</Text>
+                  <TextInput
+                    style={leave.dateInput}
+                    value={leaveStart}
+                    onChangeText={setLeaveStart}
+                    placeholder="YYYY-MM-DD"
+                    placeholderTextColor="#9A9AB0"
+                  />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={leave.label}>End Date</Text>
+                  <TextInput
+                    style={leave.dateInput}
+                    value={leaveEnd}
+                    onChangeText={setLeaveEnd}
+                    placeholder="YYYY-MM-DD"
+                    placeholderTextColor="#9A9AB0"
+                  />
+                </View>
+              </View>
+              {leaveStart && leaveEnd && leaveEnd >= leaveStart && (
+                <Text style={leave.daysHint}>{calcDays(leaveStart, leaveEnd)} day(s)</Text>
+              )}
+
+              <Text style={leave.label}>Reason (optional)</Text>
+              <TextInput
+                style={leave.reasonInput}
+                value={leaveReason}
+                onChangeText={setLeaveReason}
+                placeholder="Brief reason for leave..."
+                placeholderTextColor="#9A9AB0"
+                multiline
+                numberOfLines={3}
+                textAlignVertical="top"
+              />
+
+              <TouchableOpacity
+                style={[leave.submitBtn, leaveSubmitting && { opacity: 0.6 }]}
+                onPress={handleLeaveSubmit}
+                disabled={leaveSubmitting}
+                activeOpacity={0.8}
+              >
+                {leaveSubmitting
+                  ? <ActivityIndicator size="small" color="#fff" />
+                  : <><Ionicons name="send" size={16} color="#fff" /><Text style={leave.submitBtnText}>Submit & Fill Form</Text></>
+                }
+              </TouchableOpacity>
+              <View style={{ height: 30 }} />
+            </ScrollView>
+          </Animated.View>
+        </KeyboardAvoidingView>
+      </Modal>
+
+      {/* ── Apply Leave — Step 2: Google Form ── */}
+      <Modal visible={leaveWebVisible} animationType="slide" onRequestClose={() => setLeaveWebVisible(false)}>
+        <View style={leave.webContainer}>
+          <View style={leave.webHeader}>
+            <Text style={leave.title}>Leave Request Form</Text>
+            <TouchableOpacity onPress={() => setLeaveWebVisible(false)} style={leave.closeBtn}>
+              <Ionicons name="close" size={22} color={COLORS.textSecondary} />
+            </TouchableOpacity>
+          </View>
+          <WebView
+            source={{ uri: LEAVE_FORM_URL }}
+            style={{ flex: 1 }}
+            startInLoadingState
+            renderLoading={() => (
+              <View style={leave.loader}>
+                <ActivityIndicator size="large" color={COLORS.primary} />
+                <Text style={leave.loaderText}>Loading form...</Text>
+              </View>
+            )}
+            javaScriptEnabled
+            domStorageEnabled
+          />
+        </View>
+      </Modal>
 
       {/* ── Change Password Modal ── */}
       <Modal visible={pwdModalVisible} transparent animationType="fade" onRequestClose={() => setPwdModalVisible(false)}>
@@ -625,6 +885,65 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: COLORS.errorLight, marginTop: 8,
   },
   logoutText: { fontSize: 16, fontWeight: '700', color: COLORS.error },
+});
+
+const leaveStatus = StyleSheet.create({
+  row: { flexDirection: 'row', alignItems: 'flex-start', padding: 14, gap: 10 },
+  info: { flex: 1, gap: 3 },
+  type: { fontSize: 14, fontWeight: '700', color: COLORS.textPrimary },
+  date: { fontSize: 12, color: COLORS.textSecondary },
+  reason: { fontSize: 12, color: COLORS.textSecondary, fontStyle: 'italic' },
+  badge: { borderRadius: 10, paddingHorizontal: 10, paddingVertical: 5, alignSelf: 'flex-start' },
+  badgeText: { fontSize: 12, fontWeight: '700' },
+});
+
+const leave = StyleSheet.create({
+  overlay: { flex: 1, justifyContent: 'flex-end' },
+  backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.45)' },
+  sheet: {
+    backgroundColor: COLORS.white, borderTopLeftRadius: 28, borderTopRightRadius: 28,
+    paddingHorizontal: 20, paddingTop: 12, paddingBottom: 10, maxHeight: '90%',
+  },
+  handle: { width: 40, height: 4, borderRadius: 2, backgroundColor: COLORS.lightGray, alignSelf: 'center', marginBottom: 16 },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
+  title: { fontSize: 20, fontWeight: '800', color: COLORS.textPrimary },
+  closeBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: COLORS.lightGray, justifyContent: 'center', alignItems: 'center' },
+  label: { fontSize: 13, fontWeight: '700', color: '#5A5A7A', marginBottom: 8 },
+  typeGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 20 },
+  typeChip: {
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10,
+    backgroundColor: '#F4F5F9', borderWidth: 1.5, borderColor: 'transparent',
+  },
+  typeChipText: { fontSize: 12, fontWeight: '700', color: '#9A9AB0' },
+  dateRow: { flexDirection: 'row', gap: 12, marginBottom: 4 },
+  dateInput: {
+    backgroundColor: '#F4F5F9', borderRadius: 10,
+    paddingHorizontal: 14, paddingVertical: 12,
+    fontSize: 14, color: COLORS.textPrimary, fontWeight: '600',
+  },
+  daysHint: { fontSize: 12, color: '#2A9D6E', fontWeight: '600', marginBottom: 16, marginLeft: 4 },
+  reasonInput: {
+    backgroundColor: '#F4F5F9', borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12,
+    fontSize: 14, color: COLORS.textPrimary, marginBottom: 20, minHeight: 80,
+  },
+  submitBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+    backgroundColor: '#D4822A', borderRadius: 14, paddingVertical: 15,
+  },
+  submitBtnText: { fontSize: 16, fontWeight: '800', color: '#fff' },
+  webContainer: { flex: 1, backgroundColor: COLORS.white },
+  webHeader: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    paddingTop: Platform.OS === 'ios' ? 56 : 16,
+    paddingHorizontal: 20, paddingBottom: 12,
+    borderBottomWidth: 1, borderBottomColor: COLORS.lightGray,
+  },
+  loader: {
+    position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+    justifyContent: 'center', alignItems: 'center', gap: 12, backgroundColor: COLORS.white,
+  },
+  loaderText: { fontSize: 14, color: COLORS.textSecondary, fontWeight: '600' },
 });
 
 const pwd = StyleSheet.create({
