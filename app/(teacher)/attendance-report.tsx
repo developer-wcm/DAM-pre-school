@@ -23,25 +23,44 @@ interface StudentReport {
   percentage: number;
 }
 
-function getTodayMonth() {
-  const d = new Date();
-  return { year: d.getFullYear(), month: d.getMonth() + 1 };
+const MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const MIN_YEAR = 2020;
+
+function monthEndDay(year: number, month: number) {
+  return new Date(year, month, 0).getDate();
 }
 
-function monthName(m: number) {
-  return ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][m - 1];
-}
+function padTwo(n: number) { return String(n).padStart(2, '0'); }
 
 export default function AttendanceReportScreen() {
   const router = useRouter();
   const [reports, setReports] = useState<StudentReport[]>([]);
   const [loading, setLoading] = useState(true);
   const [assignedClass, setAssignedClass] = useState<string | null>(null);
-  const { year, month } = getTodayMonth();
 
-  useEffect(() => { load(); }, []);
+  const today = new Date();
+  const [viewYear, setViewYear] = useState(today.getFullYear());
+  const [viewMonth, setViewMonth] = useState(today.getMonth() + 1);
+
+  const isCurrentMonth = viewYear === today.getFullYear() && viewMonth === today.getMonth() + 1;
+  const isMinMonth = viewYear === MIN_YEAR && viewMonth === 1;
+
+  const prevMonth = () => {
+    if (isMinMonth) return;
+    if (viewMonth === 1) { setViewYear((y) => y - 1); setViewMonth(12); }
+    else setViewMonth((m) => m - 1);
+  };
+
+  const nextMonth = () => {
+    if (isCurrentMonth) return;
+    if (viewMonth === 12) { setViewYear((y) => y + 1); setViewMonth(1); }
+    else setViewMonth((m) => m + 1);
+  };
+
+  useEffect(() => { load(); }, [viewYear, viewMonth]);
 
   async function load() {
+    setLoading(true);
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
@@ -65,8 +84,8 @@ export default function AttendanceReportScreen() {
       if (!students || students.length === 0) { setLoading(false); return; }
 
       const ids = students.map((s) => s.id);
-      const startDate = `${year}-${String(month).padStart(2, '0')}-01`;
-      const endDate = new Date(year, month, 0).toISOString().split('T')[0];
+      const startDate = `${viewYear}-${padTwo(viewMonth)}-01`;
+      const endDate = `${viewYear}-${padTwo(viewMonth)}-${padTwo(monthEndDay(viewYear, viewMonth))}`;
 
       const { data: attendance } = await supabase
         .from('attendance')
@@ -119,9 +138,33 @@ export default function AttendanceReportScreen() {
         <View style={{ flex: 1 }}>
           <Text style={styles.headerTitle}>Attendance Report</Text>
           <Text style={styles.headerSub}>
-            {monthName(month)} {year} {assignedClass ? `• Class ${assignedClass}` : ''}
+            {assignedClass ? `Class ${assignedClass}` : ''}
           </Text>
         </View>
+      </View>
+
+      {/* Month navigation */}
+      <View style={styles.monthNav}>
+        <TouchableOpacity
+          style={[styles.navBtn, isMinMonth && styles.navBtnDisabled]}
+          onPress={prevMonth}
+          disabled={isMinMonth}
+          activeOpacity={0.7}
+        >
+          <Ionicons name="chevron-back" size={20} color={isMinMonth ? COLORS.textLight : COLORS.primary} />
+        </TouchableOpacity>
+        <Text style={styles.monthLabel}>
+          {MONTH_NAMES[viewMonth - 1]} {viewYear}
+          {isCurrentMonth ? '  (This Month)' : ''}
+        </Text>
+        <TouchableOpacity
+          style={[styles.navBtn, isCurrentMonth && styles.navBtnDisabled]}
+          onPress={nextMonth}
+          disabled={isCurrentMonth}
+          activeOpacity={0.7}
+        >
+          <Ionicons name="chevron-forward" size={20} color={isCurrentMonth ? COLORS.textLight : COLORS.primary} />
+        </TouchableOpacity>
       </View>
 
       {loading ? (
@@ -136,7 +179,7 @@ export default function AttendanceReportScreen() {
       ) : reports.length === 0 ? (
         <View style={styles.center}>
           <Ionicons name="calendar-outline" size={48} color={COLORS.textLight} />
-          <Text style={styles.emptyText}>No attendance data this month</Text>
+          <Text style={styles.emptyText}>No attendance data for {MONTH_NAMES[viewMonth - 1]} {viewYear}</Text>
         </View>
       ) : (
         <ScrollView contentContainerStyle={styles.listContent} showsVerticalScrollIndicator={false}>
@@ -235,6 +278,22 @@ const styles = StyleSheet.create({
   headerSub: { fontSize: 12, color: COLORS.textSecondary, marginTop: 2 },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 12 },
   emptyText: { fontSize: 16, color: COLORS.textSecondary, fontWeight: '600' },
+
+  monthNav: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    marginHorizontal: 20, marginTop: 16, marginBottom: 4,
+    backgroundColor: COLORS.white, borderRadius: 16,
+    paddingHorizontal: 8, paddingVertical: 10,
+    shadowColor: COLORS.primary, shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06, shadowRadius: 8, elevation: 2,
+  },
+  navBtn: {
+    width: 40, height: 40, borderRadius: 12,
+    backgroundColor: COLORS.primarySoft, justifyContent: 'center', alignItems: 'center',
+  },
+  navBtnDisabled: { backgroundColor: COLORS.lightGray },
+  monthLabel: { fontSize: 15, fontWeight: '700', color: COLORS.textPrimary },
+
   listContent: { padding: 16, gap: 12 },
 
   summaryRow: { flexDirection: 'row', gap: 10, marginBottom: 4 },

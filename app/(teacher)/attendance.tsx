@@ -118,7 +118,6 @@ export default function TeacherAttendanceScreen() {
   }
 
   function markAttendance(studentId: string, status: AttendanceStatus) {
-    if (alreadySaved) return; // don't allow changes after saving
     setStudents((prev) =>
       prev.map((s) =>
         s.id === studentId
@@ -129,7 +128,6 @@ export default function TeacherAttendanceScreen() {
   }
 
   function markAllPresent() {
-    if (alreadySaved) return;
     setStudents((prev) => prev.map((s) => ({ ...s, attendance: 'present' })));
   }
 
@@ -178,8 +176,12 @@ export default function TeacherAttendanceScreen() {
 
       if (error) throw error;
 
+      const wasAlreadySaved = alreadySaved;
       setAlreadySaved(true);
-      Alert.alert('✅ Saved!', `Attendance for ${assignedClass} saved successfully.`);
+      Alert.alert(
+        wasAlreadySaved ? '✅ Updated!' : '✅ Saved!',
+        `Attendance for ${assignedClass} ${wasAlreadySaved ? 'updated' : 'saved'} successfully.`
+      );
     } catch (err: any) {
       Alert.alert('Error', err.message || 'Failed to save attendance.');
     } finally {
@@ -213,12 +215,11 @@ export default function TeacherAttendanceScreen() {
             Attendance {assignedClass ? `— ${assignedClass}` : ''}
           </Text>
         </View>
-        {!alreadySaved && students.length > 0 && (
+        {students.length > 0 && (
           <TouchableOpacity style={styles.markAllButton} onPress={markAllPresent} activeOpacity={0.7}>
             <Text style={styles.markAllText}>All P</Text>
           </TouchableOpacity>
         )}
-        {alreadySaved && <View style={{ width: 60 }} />}
       </View>
 
       {/* Date */}
@@ -281,7 +282,7 @@ export default function TeacherAttendanceScreen() {
           </View>
         ) : (
           students.map((student, index) => (
-            <View key={student.id} style={[styles.studentCard, alreadySaved && styles.studentCardSaved]}>
+            <View key={student.id} style={styles.studentCard}>
               <View style={[styles.avatar, { backgroundColor: AVATAR_COLORS[index % AVATAR_COLORS.length] }]}>
                 <Text style={styles.avatarText}>{getInitials(student.full_name)}</Text>
               </View>
@@ -304,8 +305,7 @@ export default function TeacherAttendanceScreen() {
                       },
                     ]}
                     onPress={() => markAttendance(student.id, status)}
-                    activeOpacity={alreadySaved ? 1 : 0.7}
-                    disabled={alreadySaved}
+                    activeOpacity={0.7}
                   >
                     <Text style={[
                       styles.attendanceBtnText,
@@ -328,7 +328,7 @@ export default function TeacherAttendanceScreen() {
       </ScrollView>
 
       {/* Save button */}
-      {students.length > 0 && !alreadySaved && (
+      {students.length > 0 && (
         <View style={styles.saveContainer}>
           <TouchableOpacity
             style={[styles.saveButton, saving && { opacity: 0.7 }]}
@@ -339,24 +339,15 @@ export default function TeacherAttendanceScreen() {
             {saving ? (
               <ActivityIndicator color={COLORS.white} size="small" />
             ) : (
-              <Ionicons name="save" size={20} color={COLORS.white} />
+              <Ionicons name={alreadySaved ? 'refresh' : 'save'} size={20} color={COLORS.white} />
             )}
             <Text style={styles.saveButtonText}>
-              {saving ? 'Saving...' : 'Save Attendance'}
+              {saving ? 'Saving...' : alreadySaved ? 'Update Attendance' : 'Save Attendance'}
             </Text>
             <View style={styles.saveBadge}>
               <Text style={styles.saveBadgeText}>{markedCount}/{students.length}</Text>
             </View>
           </TouchableOpacity>
-        </View>
-      )}
-
-      {alreadySaved && (
-        <View style={styles.saveContainer}>
-          <View style={styles.savedBar}>
-            <Ionicons name="checkmark-circle" size={20} color={COLORS.success} />
-            <Text style={styles.savedBarText}>Today's attendance already saved</Text>
-          </View>
         </View>
       )}
     </View>
@@ -429,7 +420,6 @@ const styles = StyleSheet.create({
     shadowColor: COLORS.primary, shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.06, shadowRadius: 8, elevation: 2,
   },
-  studentCardSaved: { opacity: 0.85 },
   avatar: { width: 46, height: 46, borderRadius: 23, justifyContent: 'center', alignItems: 'center' },
   avatarText: { fontSize: 15, fontWeight: '800', color: COLORS.primary },
   studentInfo: { flex: 1, gap: 2 },
@@ -460,9 +450,4 @@ const styles = StyleSheet.create({
   },
   saveBadgeText: { fontSize: 12, fontWeight: '700', color: COLORS.white },
 
-  savedBar: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    gap: 8, backgroundColor: COLORS.successLight, borderRadius: 50, padding: 16,
-  },
-  savedBarText: { fontSize: 15, fontWeight: '700', color: COLORS.success },
 });

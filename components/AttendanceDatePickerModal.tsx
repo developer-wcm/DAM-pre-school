@@ -49,7 +49,8 @@ export default function AttendanceDatePickerModal({
   onApply,
 }: AttendanceDatePickerModalProps) {
   const insets = useSafeAreaInsets();
-  const maxYear = new Date().getFullYear() + 1;
+  const today = new Date();
+  const maxYear = today.getFullYear();
 
   const [year, setYear] = useState(focusDate.getFullYear());
   const [month, setMonth] = useState(focusDate.getMonth());
@@ -79,10 +80,14 @@ export default function AttendanceDatePickerModal({
   }, [day, daysInMonth]);
 
   const handleApply = () => {
-    const next =
+    let next =
       mode === 'monthly'
         ? new Date(year, month, 1)
         : new Date(year, month, Math.min(day, daysInMonth));
+    const todayMidnight = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    if (next > todayMidnight) {
+      next = todayMidnight;
+    }
     onApply(next);
     onClose();
   };

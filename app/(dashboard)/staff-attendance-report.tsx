@@ -59,8 +59,10 @@ export default function StaffAttendanceReportScreen() {
 
   const isCurrentMonth =
     viewYear === today.getFullYear() && viewMonth === today.getMonth() + 1;
+  const isMinMonth = viewYear === 2020 && viewMonth === 1;
 
   const prevMonth = () => {
+    if (isMinMonth) return;
     if (viewMonth === 1) { setViewYear((y) => y - 1); setViewMonth(12); }
     else setViewMonth((m) => m - 1);
   };
@@ -191,8 +193,13 @@ export default function StaffAttendanceReportScreen() {
 
       {/* Month navigation */}
       <View style={styles.monthNav}>
-        <TouchableOpacity style={styles.navBtn} onPress={prevMonth} activeOpacity={0.7}>
-          <Ionicons name="chevron-back" size={20} color={COLORS.primary} />
+        <TouchableOpacity
+          style={[styles.navBtn, isMinMonth && styles.navBtnDisabled]}
+          onPress={prevMonth}
+          disabled={isMinMonth}
+          activeOpacity={0.7}
+        >
+          <Ionicons name="chevron-back" size={20} color={isMinMonth ? COLORS.textLight : COLORS.primary} />
         </TouchableOpacity>
         <Text style={styles.monthLabel}>
           {MONTH_NAMES[viewMonth - 1]} {viewYear}

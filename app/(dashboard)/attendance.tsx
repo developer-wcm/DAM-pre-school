@@ -304,12 +304,27 @@ export default function AttendanceScreen() {
 
   const goToNextPeriod = () => {
     runWithDiscardCheck(() => {
-      setFocusDate((current) => (viewMode === 'daily' ? addDays(current, 1) : shiftMonths(current, 1)));
+      setFocusDate((current) => {
+        const next = viewMode === 'daily' ? addDays(current, 1) : shiftMonths(current, 1);
+        const today = new Date();
+        if (viewMode === 'daily') {
+          return toDateKey(next) > toDateKey(today) ? current : next;
+        }
+        return next.getFullYear() > today.getFullYear() ||
+          (next.getFullYear() === today.getFullYear() && next.getMonth() > today.getMonth())
+          ? current
+          : next;
+      });
     });
   };
 
   const applyFocusDate = (date: Date) => {
-    runWithDiscardCheck(() => setFocusDate(date));
+    const today = new Date();
+    const clamped =
+      date > new Date(today.getFullYear(), today.getMonth(), today.getDate())
+        ? new Date(today.getFullYear(), today.getMonth(), today.getDate())
+        : date;
+    runWithDiscardCheck(() => setFocusDate(clamped));
   };
 
   const switchViewMode = (mode: 'daily' | 'monthly') => {
@@ -403,7 +418,8 @@ export default function AttendanceScreen() {
       setSavedSnapshot(nextSnapshot);
 
       const presentCount = toUpsert.filter((s) => s.attendance === 'present').length;
-      const dateLabel = new Date(selectedDate).toLocaleDateString('en-IN', {
+      const [y, m, d] = selectedDate.split('-').map(Number);
+      const dateLabel = new Date(y, m - 1, d).toLocaleDateString('en-IN', {
         day: 'numeric', month: 'short', year: 'numeric',
       });
       sendPushToRoles(
