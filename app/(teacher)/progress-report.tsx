@@ -116,6 +116,7 @@ export default function ProgressReportScreen() {
         .from('students')
         .select('id, full_name, roll_number')
         .eq('class', cls)
+        .eq('status', 'active')
         .order('full_name');
       setStudents(data ?? []);
     } catch (e) { console.error(e); }

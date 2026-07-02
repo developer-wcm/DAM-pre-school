@@ -77,6 +77,7 @@ export default function TeacherAttendanceScreen() {
         .from('students')
         .select('id, full_name, roll_number')
         .eq('class', profile.assigned_class)
+        .eq('status', 'active')
         .order('full_name');
 
       if (profile.assigned_section) {

@@ -123,6 +123,7 @@ export default function TeacherClassScreen() {
           .from('students')
           .select('id, full_name, roll_number, class, section')
           .eq('class', profile.assigned_class)
+          .eq('status', 'active')
           .order('full_name', { ascending: true });
 
         if (profile.assigned_section) {

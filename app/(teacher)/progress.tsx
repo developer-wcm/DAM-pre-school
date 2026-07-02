@@ -92,6 +92,7 @@ export default function TeacherProgressScreen() {
           .from('students')
           .select('id, full_name, class')
           .eq('class', profile.assigned_class)
+          .eq('status', 'active')
           .order('full_name');
 
         if (profile.assigned_section) {

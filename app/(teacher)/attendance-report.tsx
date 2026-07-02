@@ -79,6 +79,7 @@ export default function AttendanceReportScreen() {
         .from('students')
         .select('id, full_name, roll_number')
         .eq('class', cls)
+        .eq('status', 'active')
         .order('full_name');
 
       if (!students || students.length === 0) { setLoading(false); return; }
