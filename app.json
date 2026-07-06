@@ -53,6 +53,10 @@
             {
               "scheme": "preschoolapp",
               "host": "auth-callback"
+            },
+            {
+              "scheme": "preschoolapp",
+              "host": "reset-password"
             }
           ],
           "category": [

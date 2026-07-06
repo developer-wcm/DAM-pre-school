@@ -33,6 +33,7 @@ interface AuthContextType {
   ) => Promise<{ error: string | null }>;
   signInWithGoogle: () => Promise<{ error: string | null }>;
   signOut: () => Promise<void>;
+  resetPasswordForEmail: (email: string) => Promise<{ error: string | null }>;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
@@ -67,12 +68,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       undefined, 'index', 'login', 'sign-up',
       'role-selection', 'find-school',
       'account-pending', 'privacy-notice', 'auth',
-      'auth-callback',
+      'auth-callback', 'reset-password',
     ];
     const onPublicScreen = publicScreens.includes(segments[0] as any);
     const firstSegment = segments[0] as string | undefined;
 
     if (firstSegment === 'index' || firstSegment === undefined) {
+      return;
+    }
+
+    // The password-reset screen creates a temporary session when it exchanges
+    // the recovery code. Never redirect away from it — the user must stay here
+    // to set a new password, after which the screen signs them out itself.
+    if (firstSegment === 'reset-password') {
       return;
     }
 
@@ -245,6 +253,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return { error: null };
   }
 
+  // ── Password Reset ────────────────────────────────────────────────────────
+  async function resetPasswordForEmail(email: string): Promise<{ error: string | null }> {
+    const redirectTo = Linking.createURL('reset-password');
+    const { error } = await supabase.auth.resetPasswordForEmail(email.trim().toLowerCase(), { redirectTo });
+    if (error) return { error: error.message };
+    return { error: null };
+  }
+
   // ── Google OAuth ──────────────────────────────────────────────────────────
   async function signInWithGoogle(): Promise<{ error: string | null }> {
     try {
@@ -355,7 +371,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   return (
     <AuthContext.Provider value={{
       session, user, profile, loading,
-      signInWithEmail, signUpWithEmail, signInWithGoogle, signOut,
+      signInWithEmail, signUpWithEmail, signInWithGoogle, signOut, resetPasswordForEmail,
     }}>
       {children}
     </AuthContext.Provider>
