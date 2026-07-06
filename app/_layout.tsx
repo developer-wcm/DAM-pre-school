@@ -30,6 +30,7 @@ export default function RootLayout() {
             <Stack.Screen name="parent-appointments" options={{ headerShown: false }} />
             <Stack.Screen name="account-pending" options={{ headerShown: false }} />
             <Stack.Screen name="auth-callback" options={{ headerShown: false }} />
+            <Stack.Screen name="reset-password" options={{ headerShown: false }} />
             <Stack.Screen name="find-school" options={{ headerShown: false }} />
           </Stack>
           <StatusBar style="auto" />
